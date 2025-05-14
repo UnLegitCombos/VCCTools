@@ -1,10 +1,10 @@
 {
-  "players_file": "players.json",
+  "players_file": "playersexample.json",
   "use_tracker": true,
   "weight_current": 0.8,
   "weight_peak": 0.2,
-  "weight_current_tracker": 0.1,
-  "weight_peak_tracker": 0.05,
+  "weight_current_tracker": 0.4,
+  "weight_peak_tracker": 0.2,
   "rank_values": {
     "Iron 1": 1,
     "Iron 2": 2,
@@ -31,5 +31,8 @@
     "Immortal 2": 23,
     "Immortal 3": 24,
     "Radiant": 25
-  }
+  },
+  "max_states": 100000000,
+  "max_time": 1200,
+  "num_random_restarts": 10
 }

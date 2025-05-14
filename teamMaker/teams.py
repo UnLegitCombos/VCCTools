@@ -2,6 +2,7 @@ import json
 import math
 import time
 import os
+from tqdm import tqdm
 from collections import defaultdict
 from multiprocessing import Pool, cpu_count
 
@@ -67,6 +68,10 @@ def load_config():
                 "Immortal 3": 24,
                 "Radiant": 25,
             },
+            "max_states": 100000000,
+            "max_time": 1200,
+            "target_team_score": 157.0,
+            "num_random_restarts": 10,  # Default number of random restarts
         }
 
 
@@ -205,9 +210,12 @@ def find_valid_subsets(groups):
     return max_subsets
 
 
-def arrangement_backtracking(groups_subset):
+def arrangement_backtracking_with_progress(groups_subset):
     """
-    Full backtracking to place groups into balanced teams
+    Full backtracking to place groups into balanced teams with a progress bar.
+    Uses random restarts to escape local minima and increase the chance of finding the most balanced arrangement.
+    Each random restart shuffles the group order and runs the backtracking search again, keeping the best result found.
+    The number of restarts is configurable in config.json as 'num_random_restarts'.
 
     Args:
         groups_subset: List of group objects to arrange into teams
@@ -215,53 +223,118 @@ def arrangement_backtracking(groups_subset):
     Returns:
         tuple: (best score difference, best assignment)
     """
+    config = load_config()
+    num_random_restarts = config.get("num_random_restarts", 10)
     total_players = sum(g["size"] for g in groups_subset)
     num_teams = total_players // 5
 
-    best_diff = math.inf
-    best_assignment = None
+    best_overall_diff = math.inf
+    best_overall_stdev = math.inf
+    best_overall_assignment = None
 
-    team_scores = [0.0] * num_teams
-    team_sizes = [0] * num_teams
-    assignment = [-1] * len(groups_subset)
+    for restart in range(num_random_restarts):
+        best_diff = math.inf
+        best_assignment = None
+        best_stdev = math.inf
 
-    def backtrack(i):
-        nonlocal best_diff, best_assignment
-        if i == len(groups_subset):
-            # All groups assigned, evaluate team balance
-            if min(team_sizes) == max(team_sizes) == 5:  # All teams complete
-                diff = max(team_scores) - min(team_scores)
-                if diff < best_diff:
-                    best_diff = diff
-                    best_assignment = assignment[:]
-            return
+        # Shuffle group order for diversity (except first run)
+        if restart == 0:
+            sorted_groups = sorted(
+                enumerate(groups_subset),
+                key=lambda x: (x[1]["size"], x[1]["sum_score"]),
+                reverse=True,
+            )
+        else:
+            import random
 
-        grp = groups_subset[i]
-        for t in range(num_teams):
-            # If group fits in team
-            if team_sizes[t] + grp["size"] <= 5:
-                # Place group in team
-                team_sizes[t] += grp["size"]
-                team_scores[t] += grp["sum_score"]
+            sorted_groups = list(enumerate(groups_subset))
+            random.shuffle(sorted_groups)
+
+        orig_to_sorted = {
+            orig_idx: sorted_idx
+            for sorted_idx, (orig_idx, _) in enumerate(sorted_groups)
+        }
+        groups_shuffled = [g for _, g in sorted_groups]
+
+        team_scores = [0.0] * num_teams
+        team_sizes = [0] * num_teams
+        assignment = [-1] * len(groups_shuffled)
+
+        max_states = config["max_states"]
+        max_time = config["max_time"]
+
+        progress_bar = tqdm(
+            total=100, desc=f"Restart {restart+1}/{num_random_restarts}"
+        )
+        progress_update_interval = max(1, max_states // 100)
+        visited_count = 0
+        total_score = sum(g["sum_score"] for g in groups_shuffled)
+        ideal_team_score = total_score / num_teams
+        all_valid_arrangements = []
+        start_time = time.time()
+
+        def backtrack(i):
+            nonlocal best_diff, best_assignment, visited_count
+            nonlocal best_stdev
+            visited_count += 1
+            if visited_count % progress_update_interval == 0:
+                progress_bar.update(1)
+            if visited_count >= max_states or (time.time() - start_time > max_time):
+                return
+            if i == len(groups_shuffled):
+                if all(size == 5 for size in team_sizes):
+                    diff = max(team_scores) - min(team_scores)
+                    avg = sum(team_scores) / len(team_scores)
+                    stdev = math.sqrt(
+                        sum((s - avg) ** 2 for s in team_scores) / len(team_scores)
+                    )
+                    all_valid_arrangements.append((diff, stdev, assignment[:]))
+                    if (diff < best_diff) or (diff == best_diff and stdev < best_stdev):
+                        best_diff = diff
+                        best_stdev = stdev
+                        best_assignment = assignment[:]
+                return False
+            grp = groups_shuffled[i]
+            grp_score = grp["sum_score"]
+            grp_size = grp["size"]
+            team_options = []
+            for t in range(num_teams):
+                if team_sizes[t] + grp_size <= 5:
+                    new_score = team_scores[t] + grp_score
+                    distance = abs(new_score - ideal_team_score)
+                    team_options.append((t, distance))
+            team_options.sort(key=lambda x: x[1])
+            for t, _ in team_options:
+                team_sizes[t] += grp_size
+                team_scores[t] += grp_score
                 assignment[i] = t
-
-                # Pruning: if current diff already exceeds best_diff, skip
-                current_max = max(
-                    score for score, size in zip(team_scores, team_sizes) if size > 0
-                )
-                current_min = min(
-                    score for score, size in zip(team_scores, team_sizes) if size > 0
-                )
-                if current_max - current_min < best_diff:
-                    backtrack(i + 1)
-
-                # Undo assignment and try next team
-                team_sizes[t] -= grp["size"]
-                team_scores[t] -= grp["sum_score"]
+                backtrack(i + 1)
+                team_sizes[t] -= grp_size
+                team_scores[t] -= grp_score
                 assignment[i] = -1
+            return False
 
-    backtrack(0)
-    return best_diff, best_assignment
+        backtrack(0)
+        progress_bar.close()
+        if best_assignment is None and all_valid_arrangements:
+            best_diff, best_stdev, best_assignment = min(
+                all_valid_arrangements, key=lambda x: (x[0], x[1])
+            )
+        if best_assignment and (
+            (best_diff < best_overall_diff)
+            or (best_diff == best_overall_diff and best_stdev < best_overall_stdev)
+        ):
+            best_overall_diff = best_diff
+            best_overall_stdev = best_stdev
+            best_overall_assignment = best_assignment
+    # Convert back to original indices
+    if best_overall_assignment:
+        orig_assignment = [-1] * len(groups_subset)
+        for sorted_idx, team in enumerate(best_overall_assignment):
+            orig_idx = next(o for o, s in orig_to_sorted.items() if s == sorted_idx)
+            orig_assignment[orig_idx] = team
+        return best_overall_diff, orig_assignment
+    return best_overall_diff, best_overall_assignment
 
 
 def evaluate_subset(args):
@@ -276,8 +349,9 @@ def evaluate_subset(args):
     """
     subset_indices, all_groups = args
     groups_subset = [all_groups[i] for i in subset_indices]
-
-    diff, assignment = arrangement_backtracking(groups_subset)
+    diff, assignment = arrangement_backtracking_with_progress(
+        groups_subset, num_random_restarts=10
+    )
     return diff, assignment, subset_indices
 
 

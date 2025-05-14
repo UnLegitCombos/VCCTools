@@ -5,6 +5,7 @@ A set of tools for VCC (Valorant Community Cup):
 - Team Maker
 - VLR Formula Aprrox.
 - Automatic stats
+- Playoffs scenarios generator
 
 ## Team Maker
 
