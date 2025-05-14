@@ -1,0 +1,23 @@
+{
+  "Player 1": {
+    "current_rank": "Ascendant 1",
+    "peak_rank": "Ascendant 1",
+    "group_id": 1,
+    "tracker_peak": 999,
+    "tracker_current": 999
+  },
+  "Player 2": {
+    "current_rank": "Ascendant 1",
+    "peak_rank": "Ascendant 1",
+    "group_id": 1,
+    "tracker_peak": 999,
+    "tracker_current": 999
+  },
+  "Player 3": {
+    "current_rank": "Ascendant 1",
+    "peak_rank": "Ascendant 1",
+    "group_id": 2,
+    "tracker_peak": 999,
+    "tracker_current": 999
+  }
+}
