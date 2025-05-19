@@ -1,5 +1,5 @@
 {
-  "players_file": "playersexample.json",
+  "players_file": "players.json",
   "use_tracker": true,
   "weight_current": 0.8,
   "weight_peak": 0.2,
@@ -32,7 +32,11 @@
     "Immortal 3": 24,
     "Radiant": 25
   },
-  "max_states": 100000000,
   "max_time": 1200,
-  "num_random_restarts": 10
+  "early_termination_threshold": 0.5,
+  "annealing_iterations": 500000,
+  "initial_temperature": 200.0,
+  "cooling_rate": 0.997,
+  "max_no_improvement": 100000,
+  "random_seed": null
 }

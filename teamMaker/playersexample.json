@@ -1,0 +1,177 @@
+{
+  "UnLegit": {
+    "current_rank": "Ascendant 1",
+    "peak_rank": "Ascendant 1",
+    "group_id": 1,
+    "tracker_peak": 361,
+    "tracker_current": 361
+  },
+  "Sabbi": {
+    "current_rank": "Gold 2",
+    "peak_rank": "Platinum 2",
+    "group_id": 1,
+    "tracker_peak": 273,
+    "tracker_current": 917
+  },
+  "Aether": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 3",
+    "group_id": 2,
+    "tracker_peak": 786,
+    "tracker_current": 744
+  },
+  "Gus": {
+    "current_rank": "Gold 3",
+    "peak_rank": "Diamond 1",
+    "group_id": 2,
+    "tracker_peak": 469,
+    "tracker_current": 915
+  },
+  "Obelisk": {
+    "current_rank": "Platinum 3",
+    "peak_rank": "Ascendant 1",
+    "group_id": 3,
+    "tracker_peak": 583,
+    "tracker_current": 606
+  },
+  "Leafy": {
+    "current_rank": "Diamond 2",
+    "peak_rank": "Diamond 3",
+    "group_id": 4,
+    "tracker_peak": 644,
+    "tracker_current": 610
+  },
+  "Nerd": {
+    "current_rank": "Gold 1",
+    "peak_rank": "Gold 2",
+    "group_id": 5,
+    "tracker_peak": 745,
+    "tracker_current": 561
+  },
+  "Araise": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 3",
+    "group_id": 6,
+    "tracker_peak": 557,
+    "tracker_current": 432
+  },
+  "Kami": {
+    "current_rank": "Immortal 3",
+    "peak_rank": "Immortal 3",
+    "group_id": 6,
+    "tracker_peak": 788,
+    "tracker_current": 788
+  },
+  "Dennis": {
+    "current_rank": "Gold 1",
+    "peak_rank": "Platinum 1",
+    "group_id": 7,
+    "tracker_peak": 505,
+    "tracker_current": 300
+  },
+  "Alex": {
+    "current_rank": "Ascendant 2",
+    "peak_rank": "Immortal 1",
+    "group_id": 18,
+    "tracker_peak": 726,
+    "tracker_current": 634
+  },
+  "Mamba": {
+    "current_rank": "Ascendant 1",
+    "peak_rank": "Immortal 1",
+    "group_id": 9,
+    "tracker_peak": 460,
+    "tracker_current": 577
+  },
+  "YuLiSto": {
+    "current_rank": "Platinum 1",
+    "peak_rank": "Diamond 2",
+    "group_id": 10,
+    "tracker_peak": 506,
+    "tracker_current": 456
+  },
+  "Aayan": {
+    "current_rank": "Diamond 2",
+    "peak_rank": "Ascendant 1",
+    "group_id": 13,
+    "tracker_peak": 617,
+    "tracker_current": 549
+  },
+  "Crablife": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 1",
+    "group_id": 16,
+    "tracker_peak": 439,
+    "tracker_current": 584
+  },
+  "Tomer": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 2",
+    "group_id": 16,
+    "tracker_peak": 591,
+    "tracker_current": 591
+  },
+  "Muru": {
+    "current_rank": "Diamond 1",
+    "peak_rank": "Diamond 3",
+    "group_id": 17,
+    "tracker_peak": 690,
+    "tracker_current": 700
+  },
+  "Accuzed": {
+    "current_rank": "Ascendant 2",
+    "peak_rank": "Immortal 1",
+    "group_id": 18,
+    "tracker_peak": 422,
+    "tracker_current": 455
+  },
+  "goonster": {
+    "current_rank": "Platinum 1",
+    "peak_rank": "Diamond 1",
+    "group_id": 19,
+    "tracker_peak": 266,
+    "tracker_current": 746
+  },
+  "MrGoudas": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 3",
+    "group_id": 20,
+    "tracker_peak": 621,
+    "tracker_current": 717
+  },
+  "Corr": {
+    "current_rank": "Silver 3",
+    "peak_rank": "Gold 3",
+    "group_id": 21,
+    "tracker_peak": 500,
+    "tracker_current": 500
+  },
+  "Rossi": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 2",
+    "group_id": 22,
+    "tracker_peak": 557,
+    "tracker_current": 858
+  },
+  "Rome": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 3",
+    "group_id": 23,
+    "tracker_peak": 454,
+    "tracker_current": 753
+  },
+  "Etem": {
+    "current_rank": "Ascendant 3",
+    "peak_rank": "Immortal 2",
+    "group_id": 23,
+    "tracker_peak": 650,
+    "tracker_current": 621
+  },
+  "Calypso": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 3",
+    "group_id": 24,
+    "tracker_peak": 600,
+    "tracker_current": 600
+  }
+}
