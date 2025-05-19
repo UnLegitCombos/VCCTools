@@ -10,15 +10,19 @@ A set of tools for VCC (Valorant Community Cup):
 ## Table of Contents
 
 - [Team Maker](#team-maker)
-  - [Features](#features)
-  - [Usage](#usage)
+  - [Features](#features-team-maker)
+  - [Usage](#usage-team-maker)
 - [VLR Formula Approximator](#vlr-formula-approximator)
+  - [Features](#features-vlr-formula-approximator)
+  - [Usage](#usage-vlr-formula-approximator)
+    - [1. Scrape and Aggregate VLR Stats](#1-scrape-and-aggregate-vlr-stats)
+    - [2. Run the Formula Approximator](#2-run-the-formula-approximator)
 
 ## Team Maker
 
 This tool creates balanced teams of 5 players, respecting group constraints (duos/trios) and optimizing for fair matches using simulated annealing.
 
-### Features
+### Features (Team Maker)
 
 - Creates balanced teams of 5 from any number of players
 - Supports groups of 1, 2, or 3 (duos/trios stay together)
@@ -27,7 +31,7 @@ This tool creates balanced teams of 5 players, respecting group constraints (duo
 - Fast optimization (usually <2.0 score diff)
 - Supports both Windows and Unix paths
 
-### Usage
+### Usage (Team Maker)
 
 1. Edit `teamMaker/players.json` with your player and group data
 2. (Optional) Adjust `teamMaker/config.json` for custom weights or settings
@@ -41,7 +45,7 @@ python teamMaker/teams.py
 
 This set of tools analyzes Valorant player statistics, generates formulas to approximate VLR rating, and provides advanced modeling and visualization.
 
-### Features
+### Features (VLR Formula Approximator)
 
 - Scrapes and aggregates VLR.gg stats for VCT, Challengers, and Game Changers (2023–2025)
 - Outputs a combined CSV (`formula/data/vlr_data.csv`) with all relevant stats, year, and event type
@@ -49,7 +53,7 @@ This set of tools analyzes Valorant player statistics, generates formulas to app
 - Visualizes stat correlations and model predictions
 - Compares datasets for improvement
 
-### Usage
+### Usage (VLR Formula Approximator)
 
 #### 1. Scrape and Aggregate VLR Stats
 
