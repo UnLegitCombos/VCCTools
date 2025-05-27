@@ -12,9 +12,10 @@ Team Formation Optimizer for Valorant
 This script creates balanced teams of 5 players from groups of players
 that must stay together. It uses simulated annealing to optimize
 team balance based on player ranks and optional tracker scores.
+Player scores are exported to player_scores.json by default.
 
 Usage:
-    python teams.py
+    python teams.py  # Create balanced teams and export player scores
 """
 
 
@@ -212,6 +213,51 @@ def find_valid_subset(groups):
 
     dfs(0, 0, [])
     return best_subset
+
+
+def export_player_scores(players_data, config, output_file=None):
+    """
+    Calculate and export the score for each player to a JSON file
+
+    Args:
+        players_data: Dict containing player information
+        config: Dict containing weight configuration
+        output_file: Optional filename for the output file (default: player_scores.json)
+
+    Returns:
+        dict: Dictionary mapping player names to their scores
+    """
+    if output_file is None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        output_file = os.path.join(script_dir, "player_scores.json")
+
+    player_scores = {}
+
+    # Calculate score for each player
+    for player_name, player_info in players_data.items():
+        score = compute_player_score(player_info, config)
+        player_scores[player_name] = {
+            "score": round(score, 2),
+            "current_rank": player_info.get("current_rank", "Unknown"),
+            "peak_rank": player_info.get("peak_rank", "Unknown"),
+            "tracker_current": player_info.get("tracker_current", 0),
+            "tracker_peak": player_info.get("tracker_peak", 0),
+        }
+
+    # Sort by score (descending)
+    sorted_scores = {
+        k: v
+        for k, v in sorted(
+            player_scores.items(), key=lambda item: item[1]["score"], reverse=True
+        )
+    }
+
+    # Write to file
+    with open(output_file, "w") as f:
+        json.dump(sorted_scores, f, indent=2)
+
+    print(f"Player scores exported to {output_file}")
+    return sorted_scores
 
 
 def evaluate_teams(teams):
@@ -758,6 +804,10 @@ def main():
     except json.JSONDecodeError:
         print(f"Error: Player file '{players_path}' is not valid JSON.")
         return
+
+    # Always export player scores by default
+    output_file = os.path.join(script_dir, "player_scores.json")
+    export_player_scores(players_data, config, output_file)
 
     # Build groups
     groups = build_groups(players_data, config)
