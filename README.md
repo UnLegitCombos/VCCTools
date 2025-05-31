@@ -64,12 +64,14 @@ A comprehensive VALORANT tournament statistics tracking system that fetches matc
 ### Usage (Stats Tracker)
 
 1. **Setup Configuration**:
+
    - Copy `stats/config.example.json` to `stats/config.json`
    - Add your Henrik API key and Google Sheet name
-   - Copy `stats/credentials.example.json` to `stats/credentials.json`  
+   - Copy `stats/credentials.example.json` to `stats/credentials.json`
    - Add your Google Service Account credentials
 
 2. **Run the tracker**:
+
 ```bash
 python stats/main.py
 ```
