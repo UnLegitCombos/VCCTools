@@ -42,12 +42,12 @@ def load_config():
     except FileNotFoundError:
         print("Config file not found. Using default configuration.")
         return {
-            "players_file": "players.json",
+            "players_file": "playersexample.json",
             "use_tracker": True,
             "weight_current": 0.8,
             "weight_peak": 0.2,
-            "weight_current_tracker": 0.1,
-            "weight_peak_tracker": 0.05,
+            "weight_current_tracker": 0.4,
+            "weight_peak_tracker": 0.2,
             "rank_values": {
                 "Iron 1": 1,
                 "Iron 2": 2,
@@ -75,9 +75,13 @@ def load_config():
                 "Immortal 3": 24,
                 "Radiant": 25,
             },
-            "max_time": 120,  # 2 minutes max
-            "annealing_iterations": 100000,
-            "initial_temperature": 100.0,
+            "max_time": 1200,
+            "early_termination_threshold": 0.5,
+            "annealing_iterations": 500000,
+            "initial_temperature": 200.0,
+            "cooling_rate": 0.997,
+            "max_no_improvement": 100000,
+            "random_seed": None,
         }
 
 

@@ -158,5 +158,14 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
 teamMaker/playersexample.json
 teamMaker/player_scores.json
+
+# Sensitive configuration files
+stats/config.json
+stats/credentials.json
+
+# Data files
+stats/masterList.json
+stats/matchList.json

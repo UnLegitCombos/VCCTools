@@ -3,6 +3,7 @@
 A set of tools for VCC (Valorant Community Cup):
 
 - **Team Maker**: Create balanced teams from groups of players, respecting group constraints and optimizing for fair matches.
+- **Stats Tracker**: Comprehensive tournament statistics tracking with Google Sheets integration using Henrik's VALORANT API.
 - **VLR Formula Approximator**: Analyze Valorant player statistics and generate formulas to approximate VLR rating using various modeling approaches.
 - **Automatic VLR Stats Scraper**: Download and aggregate player stats from VLR.gg for multiple years and event types.
 - **Playoffs Scenarios Generator**: Simulate and analyze playoff scenarios (details coming soon).
@@ -12,6 +13,9 @@ A set of tools for VCC (Valorant Community Cup):
 - [Team Maker](#team-maker)
   - [Features](#features-team-maker)
   - [Usage](#usage-team-maker)
+- [Stats Tracker](#stats-tracker)
+  - [Features](#features-stats-tracker)
+  - [Usage](#usage-stats-tracker)
 - [VLR Formula Approximator](#vlr-formula-approximator)
   - [Features](#features-vlr-formula-approximator)
   - [Usage](#usage-vlr-formula-approximator)
@@ -40,6 +44,37 @@ This tool creates balanced teams of 5 players, respecting group constraints (duo
 ```bash
 python teamMaker/teams.py
 ```
+
+## Stats Tracker
+
+A comprehensive VALORANT tournament statistics tracking system that fetches match data from Henrik's API and automatically uploads detailed statistics to Google Sheets.
+
+### Features (Stats Tracker)
+
+- **Automated Match Detection**: Fetches custom matches for tracked players
+- **Intelligent Filtering**: Automatic and manual filtering of tournament vs non-tournament matches
+- **Comprehensive Statistics**: Calculates 25+ metrics including:
+  - ACS (Average Combat Score), K/D, ADR (Average Damage per Round)
+  - KAST (Kill/Assist/Survive/Trade percentage)
+  - First Kills/Deaths per round, Clutch success rate
+  - Custom rating system based on multiple performance factors
+- **Google Sheets Integration**: Automatic upload and organization of match data
+- **Player Management**: Tracks multiple players across tournaments
+
+### Usage (Stats Tracker)
+
+1. **Setup Configuration**:
+   - Copy `stats/config.example.json` to `stats/config.json`
+   - Add your Henrik API key and Google Sheet name
+   - Copy `stats/credentials.example.json` to `stats/credentials.json`  
+   - Add your Google Service Account credentials
+
+2. **Run the tracker**:
+```bash
+python stats/main.py
+```
+
+For detailed setup instructions including API keys and Google Sheets configuration, see `stats/README.md`.
 
 ## VLR Formula Approximator
 

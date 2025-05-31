@@ -1,5 +1,5 @@
 {
-  "players_file": "players.json",
+  "players_file": "playersexample.json",
   "use_tracker": true,
   "weight_current": 0.8,
   "weight_peak": 0.2,
