@@ -326,11 +326,9 @@ def main():
     if not allNewMatches:
         print("\nNo new matches found across all selected players. Exiting.")
         logging.info("No new matches across all players, done.")
-        return
-
-    # Sort matches by timestamp (newest first) for consistent display order
-    allNewMatches.sort(key=lambda match: match["metadata"]["started_at"], reverse=True)
-    logging.info(f"Sorted {len(allNewMatches)} matches by timestamp (newest first).")
+        return  # Sort matches by timestamp (oldest first) for chronological processing and sheet order
+    allNewMatches.sort(key=lambda match: match["metadata"]["started_at"], reverse=False)
+    logging.info(f"Sorted {len(allNewMatches)} matches by timestamp (oldest first).")
 
     # Now, show them as a single consolidated list
     selectedMatches = displayMatchesForSelection(
@@ -341,9 +339,7 @@ def main():
         logging.info("User did not select any matches to process, done.")
         return
 
-    allRows = []
-
-    # Process matches in the order they were selected (newest first)
+    allRows = []  # Process matches in chronological order (oldest first)
     for matchDict in selectedMatches:
         matchId = matchDict["metadata"]["match_id"]
         if matchId in matchList:
@@ -353,8 +349,8 @@ def main():
         logging.debug("User selected match %s for processing.", matchId)
         addTournamentMatch(matchList, matchId)
         rows = processMatch(matchDict, masterList)
-        # Add these rows to the beginning to maintain newest-first order in the sheet
-        allRows = rows + allRows
+        # Add these rows to maintain chronological order in the sheet
+        allRows.extend(rows)
 
     saveMatchList(matchList)
 
