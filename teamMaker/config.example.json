@@ -1,10 +1,27 @@
 {
-  "players_file": "playersexample.json",
+  "players_file": "players.json",
+  "mode": "advanced",
+
+  "_comment_basic_settings": "These settings apply to both basic and advanced modes",
   "use_tracker": true,
   "weight_current": 0.8,
   "weight_peak": 0.2,
-  "weight_current_tracker": 0.4,
-  "weight_peak_tracker": 0.2,
+  "weight_current_tracker": 0.1,
+  "weight_peak_tracker": 0.025,
+
+  "_comment_advanced_settings": "These settings only apply when mode is 'advanced'",
+  "use_peak_act": true,
+  "weight_peak_act": 0.15,
+  "peak_act_decay_rate": 0.95,
+  "use_role_balancing": true,
+  "role_balance_weight": 5.0,
+  "use_region_debuff": true,
+  "non_eu_debuff": 0.95,
+  "use_returning_player_stats": true,
+  "weight_previous_season": 0.3,
+  "previous_season_max_score": 10.0,
+
+  "_comment_rank_values": "Numeric values for each rank",
   "rank_values": {
     "Iron 1": 1,
     "Iron 2": 2,
@@ -30,8 +47,10 @@
     "Immortal 1": 22,
     "Immortal 2": 23,
     "Immortal 3": 24,
-    "Radiant": 25
+    "Radiant": 28
   },
+
+  "_comment_optimization_settings": "Settings for the optimization algorithm",
   "max_time": 1200,
   "early_termination_threshold": 0.5,
   "annealing_iterations": 500000,
