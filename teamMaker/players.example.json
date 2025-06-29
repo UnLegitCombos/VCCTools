@@ -1,0 +1,82 @@
+{
+  "Player1": {
+    "current_rank": "Diamond 3",
+    "peak_rank": "Ascendant 1",
+    "peak_rank_act": "S25A3",
+    "group_id": 1,
+    "tracker_peak": 309,
+    "tracker_current": 361,
+    "role": ["duelist", "sentinel"],
+    "region": "EU",
+    "is_returning_player": true,
+    "previous_season_stats": [
+      {
+        "season": "S8",
+        "adjusted_rating": 0.85
+      },
+      {
+        "season": "S9",
+        "adjusted_rating": 0.92
+      }
+    ]
+  },
+  "Player2": {
+    "current_rank": "Platinum 2",
+    "peak_rank": "Platinum 2",
+    "peak_rank_act": "S25A1",
+    "group_id": 2,
+    "tracker_peak": 650,
+    "tracker_current": 650,
+    "role": "controller",
+    "region": "EU",
+    "is_returning_player": false
+  },
+  "Player3": {
+    "current_rank": "Immortal 1",
+    "peak_rank": "Immortal 3",
+    "peak_rank_act": "E8A3",
+    "group_id": 3,
+    "tracker_peak": 786,
+    "tracker_current": 492,
+    "role": "duelist",
+    "region": "NA",
+    "is_returning_player": true,
+    "previous_season_stats": {
+      "season": "S9",
+      "adjusted_rating": 1.18
+    }
+  },
+  "Player4": {
+    "current_rank": "Gold 2",
+    "peak_rank": "Diamond 1",
+    "peak_rank_act": "E9A1",
+    "group_id": 4,
+    "tracker_peak": 469,
+    "tracker_current": 680,
+    "role": "sentinel",
+    "region": "EU",
+    "is_returning_player": false
+  },
+  "Player5": {
+    "current_rank": "Ascendant 1",
+    "peak_rank": "Ascendant 1",
+    "peak_rank_act": "S25A3",
+    "group_id": 5,
+    "tracker_peak": 512,
+    "tracker_current": 512,
+    "role": ["controller", "sentinel"],
+    "region": "EU",
+    "is_returning_player": false
+  },
+  "Player6": {
+    "current_rank": "Bronze 2",
+    "peak_rank": "Bronze 3",
+    "peak_rank_act": "S25A3",
+    "group_id": 6,
+    "tracker_peak": 269,
+    "tracker_current": 269,
+    "role": "flex",
+    "region": "EU",
+    "is_returning_player": false
+  }
+}
