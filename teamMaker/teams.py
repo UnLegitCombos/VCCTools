@@ -12,10 +12,22 @@ Team Formation Optimizer for Valorant
 This script creates balanced teams of 5 players from groups of players
 that must stay together. It uses simulated annealing to optimize
 team balance based on player ranks and optional tracker scores.
+
+Features two modes:
+- BASIC MODE: Original functionality with rank and tracker score balancing
+- ADVANCED MODE: Additional features including:
+  * Peak rank act weighting (older peak ranks matter less)
+  * Role balancing for team compositions  
+  * Region-based adjustments (non-EU players get slight debuff)
+  * Previous season stats integration (percentile-based S8/S9 data)
+
 Player scores are exported to player_scores.json by default.
 
 Usage:
     python teams.py  # Create balanced teams and export player scores
+    
+Configuration:
+    Set "mode": "basic" or "advanced" in config.json to choose mode
 """
 
 
@@ -43,11 +55,24 @@ def load_config():
         print("Config file not found. Using default configuration.")
         return {
             "players_file": "playersexample.json",
+            "mode": "basic",  # "basic" or "advanced"
+            # Basic mode settings (existing functionality)
             "use_tracker": True,
             "weight_current": 0.8,
             "weight_peak": 0.2,
             "weight_current_tracker": 0.4,
             "weight_peak_tracker": 0.2,
+            # Advanced mode settings
+            "use_peak_act": True,
+            "weight_peak_act": 0.15,
+            "peak_act_decay_rate": 0.9,  # Exponential decay per act
+            "use_role_balancing": True,
+            "role_balance_weight": 2.0,  # Penalty for unbalanced role compositions
+            "use_region_debuff": True,
+            "non_eu_debuff": 0.95,  # Multiplier for non-EU players
+            "use_returning_player_stats": False,  # For previous season percentile scoring
+            "returning_player_ranked_weight": 0.7,  # Weight for ranked stats for returning players (vs previous season)
+            "previous_season_max_score": 10.0,  # Deprecated - kept for backwards compatibility
             "rank_values": {
                 "Iron 1": 1,
                 "Iron 2": 2,
@@ -73,7 +98,15 @@ def load_config():
                 "Immortal 1": 22,
                 "Immortal 2": 23,
                 "Immortal 3": 24,
-                "Radiant": 25,
+                "Radiant": 28,
+            },
+            # Role values for advanced mode
+            "role_values": {
+                "duelist": 1,
+                "initiator": 1,
+                "controller": 1,
+                "sentinel": 1,
+                "flex": 0.8,  # Slightly lower value for flexibility
             },
             "max_time": 1200,
             "early_termination_threshold": 0.5,
@@ -90,9 +123,135 @@ def rank_to_numeric(rank_str, rank_values):
     return rank_values.get(rank_str, 0)
 
 
+def parse_peak_act(peak_act_str):
+    """
+    Parse peak act string (e.g., "E9A3" or "S25A3") and return episodes/acts ago
+
+    Episodes (E1-E9): 3 acts per episode
+    Seasons (S25+): 4 acts per season, starting after E9A3
+
+    Args:
+        peak_act_str: String like "E9A3" (Episode 9 Act 3) or "S25A3" (Season 25 Act 3)
+
+    Returns:
+        int: Number of acts ago (0 = current act)
+    """
+    if not peak_act_str:
+        return 0
+
+    try:
+        # Current season/episode reference (adjust these as needed)
+        # Update these values based on current Valorant act
+        current_season = 25  # Current season number
+        current_act = 3  # Current act within current season
+
+        peak_act_str = peak_act_str.upper().strip()
+
+        if peak_act_str.startswith("E"):
+            # Episode format: E1A1 to E9A3
+            parts = peak_act_str[1:].split("A")
+            if len(parts) == 2:
+                episode = int(parts[0])
+                act = int(parts[1])
+
+                # Episodes go from E1 to E9, each with 3 acts
+                if episode < 1 or episode > 9 or act < 1 or act > 3:
+                    return 0  # Invalid episode/act
+
+                # Calculate total acts from start of E1A1 to peak
+                peak_total_acts = (episode - 1) * 3 + act
+
+                # Calculate total acts from start of E1A1 to current season
+                # E9A3 is the last episode act, then S25 starts
+                current_total_acts = 9 * 3 + (current_season - 25) * 4 + current_act
+
+                acts_ago = current_total_acts - peak_total_acts
+                return max(0, acts_ago)
+
+        elif peak_act_str.startswith("S"):
+            # Season format: S25A1 onwards (4 acts per season)
+            parts = peak_act_str[1:].split("A")
+            if len(parts) == 2:
+                season = int(parts[0])
+                act = int(parts[1])
+
+                # Seasons start from S25, each with 4 acts
+                if season < 25 or act < 1 or act > 4:
+                    return 0  # Invalid season/act
+
+                # Calculate acts ago within the season system
+                current_total_season_acts = (current_season - 25) * 4 + current_act
+                peak_total_season_acts = (season - 25) * 4 + act
+
+                acts_ago = current_total_season_acts - peak_total_season_acts
+                return max(0, acts_ago)
+
+    except (ValueError, IndexError):
+        pass
+
+    return 0  # Default to current act if parsing fails
+
+
+def calculate_peak_act_weight(acts_ago, decay_rate):
+    """
+    Calculate weight for peak rank based on how many acts ago it was achieved
+
+    Args:
+        acts_ago: Number of acts since peak was achieved
+        decay_rate: Exponential decay rate per act
+
+    Returns:
+        float: Weight multiplier (1.0 for current act, decreasing exponentially)
+    """
+    return decay_rate**acts_ago
+
+
+def get_role_balance_score(team_roles):
+    """
+    Calculate role balance score for a team
+
+    Args:
+        team_roles: List of role strings for team members
+
+    Returns:
+        float: Balance score (higher is more balanced)
+    """
+    if not team_roles or len(team_roles) != 5:
+        return 0.0
+
+    # Count roles
+    role_counts = {}
+    for role in team_roles:
+        role_counts[role] = role_counts.get(role, 0) + 1
+
+    # Ideal composition: 1 of each main role (duelist, initiator, controller, sentinel)
+    # with one flex or duplicate
+    main_roles = ["duelist", "initiator", "controller", "sentinel"]
+
+    # Calculate balance score for display
+    balance_score = 0.0
+
+    # Bonus for having each main role covered
+    for role in main_roles:
+        if role in role_counts and role_counts[role] >= 1:
+            balance_score += 1.0
+
+    # Penalty for having too many of the same role
+    for role, count in role_counts.items():
+        if count > 2:  # More than 2 of the same role is bad
+            balance_score -= (count - 2) * 0.5
+
+    # Bonus for balanced distribution
+    if len(role_counts) >= 4:  # At least 4 different roles
+        balance_score += 0.5
+
+    return max(0.0, balance_score)
+
+
 def compute_player_score(player_info, config):
     """
     Compute a player's score based on ranks and optionally tracker values
+    Supports both basic and advanced modes
 
     Args:
         player_info: Dict containing player data
@@ -101,13 +260,14 @@ def compute_player_score(player_info, config):
     Returns:
         float: Player's calculated score
     """
+    mode = config.get("mode", "basic")
     current_val = rank_to_numeric(player_info["current_rank"], config["rank_values"])
     peak_val = rank_to_numeric(player_info["peak_rank"], config["rank_values"])
 
     # Base score from ranks
     score = config["weight_current"] * current_val + config["weight_peak"] * peak_val
 
-    # Add tracker scores if enabled
+    # Add tracker scores if enabled (both modes)
     if (
         config["use_tracker"]
         and "tracker_current" in player_info
@@ -135,6 +295,38 @@ def compute_player_score(player_info, config):
             score + current_tracker_score + peak_tracker_score
         ) * consistency_factor
 
+    # Advanced mode features
+    if mode == "advanced":
+        # Peak rank act weighting
+        if config.get("use_peak_act", False) and "peak_rank_act" in player_info:
+            acts_ago = parse_peak_act(player_info["peak_rank_act"])
+            act_weight = calculate_peak_act_weight(
+                acts_ago, config.get("peak_act_decay_rate", 0.9)
+            )
+            peak_act_bonus = config.get("weight_peak_act", 0.15) * peak_val * act_weight
+            score += peak_act_bonus
+
+        # Previous season stats handling - replaces part of ranked stats for returning players
+        if config.get("use_returning_player_stats", False) and player_info.get(
+            "is_returning_player", False
+        ):
+            previous_season_score = calculate_previous_season_score(player_info, config)
+            if previous_season_score > 0:
+                # Weight configuration for returning players
+                ranked_weight = config.get(
+                    "returning_player_ranked_weight", 0.7
+                )  # 70% ranked
+                previous_weight = 1.0 - ranked_weight  # 30% previous season
+
+                # Blend current score (ranked-based) with previous season score
+                score = score * ranked_weight + previous_season_score * previous_weight
+
+        # Region debuff for non-EU players (ping penalty only)
+        if config.get("use_region_debuff", False):
+            region = player_info.get("region", "EU").upper()
+            if region != "EU":
+                score *= config.get("non_eu_debuff", 0.95)
+
     return score
 
 
@@ -147,7 +339,7 @@ def build_groups(players_data, config):
         config: Dict containing weight configuration
 
     Returns:
-        list: List of group objects
+        tuple: (list of group objects for optimization, list of excluded groups)
     """
     group_map = defaultdict(list)
     for player_name, pinfo in players_data.items():
@@ -155,24 +347,44 @@ def build_groups(players_data, config):
         group_map[group_id].append(player_name)
 
     group_list = []
+    excluded_groups = []
+
     for g_id, members in group_map.items():
         group_size = len(members)
-        if group_size not in (1, 2, 3):
-            raise ValueError(
-                f"Group {g_id} has {group_size} players. Allowed sizes: 1, 2, or 3."
-            )
         total_score = sum(
             compute_player_score(players_data[m], config) for m in members
         )
-        group_list.append(
-            {
-                "group_id": g_id,
-                "members": members,
-                "sum_score": total_score,
-                "size": group_size,
-            }
-        )
-    return group_list
+
+        # Collect roles for advanced mode (primary role only)
+        roles = []
+        if config.get("mode", "basic") == "advanced":
+            for m in members:
+                player_role = players_data[m].get("role", "flex")
+                # Handle both single role and list of roles - use primary (first) role only
+                if isinstance(player_role, list):
+                    primary_role = player_role[0] if player_role else "flex"
+                    roles.append(primary_role)
+                else:
+                    roles.append(player_role)
+
+        group_obj = {
+            "group_id": g_id,
+            "members": members,
+            "sum_score": total_score,
+            "size": group_size,
+            "roles": roles,
+        }
+
+        # Separate groups based on size - only 1-3 player groups can be optimized
+        if group_size in (1, 2, 3):
+            group_list.append(group_obj)
+        else:
+            excluded_groups.append(group_obj)
+            print(
+                f"ℹ️  Group {g_id} ({group_size} players) excluded from optimization - scores calculated"
+            )
+
+    return group_list, excluded_groups
 
 
 def find_valid_subset(groups):
@@ -193,30 +405,102 @@ def find_valid_subset(groups):
     if total_size % 5 == 0:
         return list(range(n))
 
-    # Otherwise, we need to find the largest subset that is divisible by 5
-    best_size = 0
-    best_subset = []
+    # Quick optimization: if we need to remove players, find the smallest groups to remove
+    remainder = total_size % 5
+    players_to_remove = remainder if remainder <= 2 else 5 - remainder
 
-    def dfs(idx, current_size, current_subset):
-        nonlocal best_size, best_subset
+    # Sort groups by size (ascending) to prioritize removing smallest groups
+    groups_with_indices = [(i, g["size"]) for i, g in enumerate(groups)]
+    groups_with_indices.sort(key=lambda x: x[1])
 
-        # Base case: we've examined all groups
-        if idx == n:
-            if current_size % 5 == 0 and current_size > best_size:
-                best_size = current_size
-                best_subset = current_subset[:]
-            return
+    # Try removing the smallest groups first
+    removed_size = 0
+    removed_indices = set()
 
-        # Skip this group
-        dfs(idx + 1, current_size, current_subset)
+    for idx, size in groups_with_indices:
+        if removed_size + size <= players_to_remove:
+            removed_indices.add(idx)
+            removed_size += size
+            if (total_size - removed_size) % 5 == 0:
+                # Found a valid solution
+                return [i for i in range(n) if i not in removed_indices]
 
-        # Take this group
-        current_subset.append(idx)
-        dfs(idx + 1, current_size + groups[idx]["size"], current_subset)
-        current_subset.pop()
+    # If simple approach didn't work, fall back to more systematic search
+    # But limit the search space by using dynamic programming approach
+    print("Using optimized subset search...")
 
-    dfs(0, 0, [])
-    return best_subset
+    # Group sizes for DP
+    sizes = [g["size"] for g in groups]
+
+    # Find the largest subset that sums to a multiple of 5
+    # We'll check target sizes in descending order
+    for target in range(total_size - (total_size % 5), 0, -5):
+        if target < total_size - 10:  # Don't remove more than 10 players
+            break
+
+        subset = find_subset_with_sum(sizes, target)
+        if subset:
+            return subset
+
+    # Final fallback: just remove smallest groups until divisible by 5
+    print("Using fallback: removing smallest groups...")
+    remaining_indices = list(range(n))
+    current_total = total_size
+
+    groups_by_size = sorted(enumerate(groups), key=lambda x: x[1]["size"])
+
+    for idx, group in groups_by_size:
+        if current_total % 5 == 0:
+            break
+        remaining_indices.remove(idx)
+        current_total -= group["size"]
+
+    return remaining_indices
+
+
+def find_subset_with_sum(sizes, target):
+    """
+    Find a subset of group indices that sum to target using dynamic programming.
+    Returns the subset indices if found, None otherwise.
+    """
+    n = len(sizes)
+    if target > sum(sizes):
+        return None
+
+    # DP table: dp[i][s] = True if we can make sum s using first i elements
+    dp = [[False] * (target + 1) for _ in range(n + 1)]
+    parent = [[None] * (target + 1) for _ in range(n + 1)]
+
+    # Base case
+    for i in range(n + 1):
+        dp[i][0] = True
+
+    # Fill DP table
+    for i in range(1, n + 1):
+        for s in range(target + 1):
+            # Don't take current element
+            dp[i][s] = dp[i - 1][s]
+            if dp[i][s]:
+                parent[i][s] = (i - 1, s)
+
+            # Take current element if possible
+            if s >= sizes[i - 1] and dp[i - 1][s - sizes[i - 1]]:
+                dp[i][s] = True
+                parent[i][s] = (i - 1, s - sizes[i - 1])
+
+    if not dp[n][target]:
+        return None
+
+    # Reconstruct solution
+    subset = []
+    i, s = n, target
+    while i > 0 and s > 0:
+        prev_i, prev_s = parent[i][s]
+        if prev_s != s:  # We took element i-1
+            subset.append(i - 1)
+        i, s = prev_i, prev_s
+
+    return subset
 
 
 def export_player_scores(players_data, config, output_file=None):
@@ -264,20 +548,21 @@ def export_player_scores(players_data, config, output_file=None):
     return sorted_scores
 
 
-def evaluate_teams(teams):
+def evaluate_teams(teams, config=None):
     """
     Evaluate the quality of team assignments using multiple metrics.
 
     Args:
         teams: A list of team objects with team_score and groups
+        config: Configuration dict (for advanced mode features)
 
     Returns:
-        tuple: (score_range, standard_deviation)
+        tuple: (score_range, standard_deviation, role_balance_penalty)
     """
     team_scores = [team["team_score"] for team in teams]
 
     if not team_scores:
-        return float("inf"), float("inf")
+        return float("inf"), float("inf"), float("inf")
 
     # Calculate score range (difference between highest and lowest team score)
     score_range = max(team_scores) - min(team_scores)
@@ -289,7 +574,31 @@ def evaluate_teams(teams):
     )
     std_dev = math.sqrt(variance)
 
-    return score_range, std_dev
+    # Role balance penalty for advanced mode
+    role_balance_penalty = 0.0
+    if (
+        config
+        and config.get("mode", "basic") == "advanced"
+        and config.get("use_role_balancing", False)
+    ):
+        total_role_penalty = 0.0
+        for team in teams:
+            # Collect all roles in this team
+            team_roles = []
+            for group in team["groups"]:
+                team_roles.extend(group.get("roles", []))
+
+            # Calculate role balance score (higher is better)
+            balance_score = get_role_balance_score(team_roles)
+            # Convert to penalty (lower is better)
+            role_penalty = max(0, 5.0 - balance_score)  # Max penalty of 5
+            total_role_penalty += role_penalty
+
+        role_balance_penalty = total_role_penalty * config.get(
+            "role_balance_weight", 2.0
+        )
+
+    return score_range, std_dev, role_balance_penalty
 
 
 def is_valid_assignment(teams, total_players):
@@ -439,17 +748,20 @@ def simulated_annealing_team_balancer(groups, config):
         return None
 
     # Evaluate initial solution
-    current_range, current_stdev = evaluate_teams(current_solution)
+    current_range, current_stdev, current_role_penalty = evaluate_teams(
+        current_solution, config
+    )
     best_solution = current_solution
     best_range = current_range
-    best_stdev = current_stdev  # Simulated annealing parameters
+    best_stdev = current_stdev
+    best_role_penalty = current_role_penalty
     temperature = config.get("initial_temperature", 100.0)
     cooling_rate = config.get("cooling_rate", 0.99)
     max_iterations = config.get("annealing_iterations", 100000)
 
-    progress_bar = tqdm(
-        total=max_iterations, desc="Optimizing teams"
-    )  # Track iterations without improvement for early stopping
+    progress_bar = tqdm(total=max_iterations, desc="Optimizing teams")
+
+    # Track iterations without improvement for early stopping
     iterations_without_improvement = 0
     max_no_improvement = config.get("max_no_improvement", 10000)
 
@@ -457,7 +769,9 @@ def simulated_annealing_team_balancer(groups, config):
     max_time = config.get("max_time", 120)  # 2 minutes default
 
     for iteration in range(max_iterations):
-        progress_bar.update(1)  # Check time limit
+        progress_bar.update(1)
+
+        # Check time limit
         if time.time() - start_time > max_time:
             progress_bar.close()
             print(f"\nReached time limit of {max_time} seconds. Stopping optimization.")
@@ -477,15 +791,19 @@ def simulated_annealing_team_balancer(groups, config):
             continue
 
         # Evaluate the neighbor
-        neighbor_range, neighbor_stdev = evaluate_teams(neighbor)
+        neighbor_range, neighbor_stdev, neighbor_role_penalty = evaluate_teams(
+            neighbor, config
+        )
 
         # Calculate acceptance probability
-        # We want to minimize both range and standard deviation,
+        # We want to minimize range, standard deviation, and role penalty
         # with range being the primary concern
 
         # Energy difference (lower is better)
-        energy_diff = (neighbor_range - current_range) + 0.2 * (
-            neighbor_stdev - current_stdev
+        energy_diff = (
+            (neighbor_range - current_range)
+            + 0.2 * (neighbor_stdev - current_stdev)
+            + 0.1 * (neighbor_role_penalty - current_role_penalty)
         )
 
         # Accept if better, or with probability based on temperature if worse
@@ -493,17 +811,25 @@ def simulated_annealing_team_balancer(groups, config):
             current_solution = neighbor
             current_range = neighbor_range
             current_stdev = neighbor_stdev
+            current_role_penalty = neighbor_role_penalty
 
             # Update best solution if this is better
-            if neighbor_range < best_range or (
-                neighbor_range == best_range and neighbor_stdev < best_stdev
+            if (
+                neighbor_range < best_range
+                or (neighbor_range == best_range and neighbor_stdev < best_stdev)
+                or (
+                    neighbor_range == best_range
+                    and neighbor_stdev == best_stdev
+                    and neighbor_role_penalty < best_role_penalty
+                )
             ):
                 best_solution = neighbor
                 best_range = neighbor_range
                 best_stdev = neighbor_stdev
-                iterations_without_improvement = (
-                    0  # If we find a very good solution, print it and exit early
-                )
+                best_role_penalty = neighbor_role_penalty
+                iterations_without_improvement = 0
+
+                # If we find a very good solution, print it and exit early
                 # The threshold can be configured in config.json
                 early_termination_threshold = config.get(
                     "early_termination_threshold", 2.0
@@ -528,6 +854,10 @@ def simulated_annealing_team_balancer(groups, config):
     progress_bar.close()
 
     print(f"Best solution found - Range: {best_range:.2f}, StdDev: {best_stdev:.2f}")
+    if config.get("mode", "basic") == "advanced" and config.get(
+        "use_role_balancing", False
+    ):
+        print(f"Role balance penalty: {best_role_penalty:.2f}")
     return best_solution
 
 
@@ -756,15 +1086,16 @@ def reconstruct_assignment(teams, groups):
     return assignment
 
 
-def calculate_statistics(teams):
+def calculate_statistics(teams, config=None):
     """
     Calculate statistics for team scores
 
     Args:
         teams: List of team objects
+        config: Configuration dict (for advanced mode features)
 
     Returns:
-        tuple: (min score, max score, range, standard deviation)
+        tuple: (min score, max score, range, standard deviation, avg_role_balance)
     """
     scores = [team["team_score"] for team in teams]
 
@@ -777,7 +1108,230 @@ def calculate_statistics(teams):
     variance = sum((s - avg) ** 2 for s in scores) / len(scores)
     std_dev = math.sqrt(variance)
 
-    return min_score, max_score, score_range, std_dev
+    # Calculate average role balance for advanced mode
+    avg_role_balance = 0.0
+    if (
+        config
+        and config.get("mode", "basic") == "advanced"
+        and config.get("use_role_balancing", False)
+    ):
+        total_balance = 0.0
+        for team in teams:
+            team_roles = []
+            for group in team["groups"]:
+                team_roles.extend(group.get("roles", []))
+            balance_score = get_role_balance_score(team_roles)
+            total_balance += balance_score
+        avg_role_balance = total_balance / len(teams) if teams else 0.0
+
+    return min_score, max_score, score_range, std_dev, avg_role_balance
+
+
+def get_season_rating_percentiles():
+    """
+    Get the rating distributions for previous seasons to calculate percentiles
+
+    Returns:
+        dict: Season data with sorted rating lists
+    """
+    # S8 adjusted ratings (sorted ascending for percentile calculation)
+    s8_ratings = [
+        0.38,
+        0.38,
+        0.40,
+        0.42,
+        0.50,
+        0.50,
+        0.50,
+        0.51,
+        0.58,
+        0.61,
+        0.63,
+        0.64,
+        0.68,
+        0.68,
+        0.70,
+        0.71,
+        0.74,
+        0.76,
+        0.77,
+        0.78,
+        0.80,
+        0.81,
+        0.82,
+        0.85,
+        0.88,
+        0.91,
+        0.92,
+        0.97,
+        0.98,
+        0.99,
+        1.00,
+        1.02,
+        1.02,
+        1.02,
+        1.04,
+        1.05,
+        1.05,
+        1.08,
+        1.09,
+        1.11,
+        1.17,
+        1.22,
+        1.24,
+        1.30,
+        1.42,
+        1.42,
+        1.46,
+        1.49,
+        1.50,
+    ]
+
+    # S9 adjusted ratings (sorted ascending for percentile calculation)
+    s9_ratings = [
+        0.561,
+        0.608,
+        0.656,
+        0.668,
+        0.732,
+        0.742,
+        0.755,
+        0.781,
+        0.795,
+        0.807,
+        0.848,
+        0.849,
+        0.875,
+        0.878,
+        0.896,
+        0.909,
+        0.923,
+        0.940,
+        0.952,
+        0.960,
+        0.967,
+        0.979,
+        0.989,
+        0.989,
+        0.998,
+        1.005,
+        1.006,
+        1.006,
+        1.055,
+        1.078,
+        1.088,
+        1.148,
+        1.179,
+        1.189,
+        1.264,
+    ]
+
+    return {"S8": sorted(s8_ratings), "S9": sorted(s9_ratings)}
+
+
+def calculate_rating_percentile(player_rating, season_ratings):
+    """
+    Calculate the percentile of a player's rating within their season
+
+    Args:
+        player_rating: Player's rating in that season
+        season_ratings: Sorted list of all ratings from that season
+
+    Returns:
+        float: Percentile (0-100)
+    """
+    if not season_ratings:
+        return 50.0  # Default to median if no data
+
+    # Count how many players this player performed better than
+    better_than_count = 0
+    for rating in season_ratings:
+        if player_rating > rating:
+            better_than_count += 1
+        else:
+            break  # Since list is sorted, we can break early
+
+    # Calculate percentile
+    total_players = len(season_ratings)
+    percentile = (better_than_count / total_players) * 100
+
+    return min(100.0, max(0.0, percentile))
+
+
+def calculate_previous_season_score(player_info, config):
+    """
+    Calculate score from previous season stats using percentile approach
+    Returns a score comparable to ranked-based scoring (not additive)
+
+    Args:
+        player_info: Dict containing player data including previous season stats
+        config: Dict containing configuration
+
+    Returns:
+        float: Previous season score (comparable to ranked score scale)
+    """
+    if not config.get("use_returning_player_stats", False):
+        return 0.0
+
+    if not player_info.get("is_returning_player", False):
+        return 0.0
+
+    # Check if player has previous season data
+    previous_stats = player_info.get("previous_season_stats", {})
+    if not previous_stats:
+        return 0.0
+
+    # Handle both single season object and list of seasons
+    if isinstance(previous_stats, list):
+        # Multiple seasons - take the best percentile
+        best_score = 0.0
+        for stats in previous_stats:
+            season = stats.get("season", "").upper()
+            rating = stats.get("adjusted_rating", 0.0)
+
+            if not season or rating <= 0:
+                continue
+
+            # Get season rating distributions
+            season_data = get_season_rating_percentiles()
+
+            if season not in season_data:
+                continue  # Unknown season
+
+            # Calculate percentile
+            percentile = calculate_rating_percentile(rating, season_data[season])
+
+            # Convert percentile to score on same scale as ranked scores
+            # Scale percentile (0-100) to rank value scale (1-25)
+            # This makes previous season score comparable to ranked score
+            season_score = (
+                1 + (percentile / 100.0) * 24
+            )  # Scale to 1-25 like rank values
+            best_score = max(best_score, season_score)
+
+        return best_score
+    else:
+        # Single season object (backwards compatibility)
+        season = previous_stats.get("season", "").upper()
+        rating = previous_stats.get("adjusted_rating", 0.0)
+
+        if not season or rating <= 0:
+            return 0.0
+
+        # Get season rating distributions
+        season_data = get_season_rating_percentiles()
+
+        if season not in season_data:
+            return 0.0  # Unknown season
+
+        # Calculate percentile
+        percentile = calculate_rating_percentile(rating, season_data[season])
+
+        # Convert percentile to score on same scale as ranked scores
+        # Scale percentile (0-100) to rank value scale (1-25)
+        season_score = 1 + (percentile / 100.0) * 24  # Scale to 1-25 like rank values
+
+        return season_score
 
 
 def main():
@@ -788,6 +1342,19 @@ def main():
 
     # Load configuration
     config = load_config()
+    mode = config.get("mode", "basic")
+
+    print(f"Running in {mode.upper()} mode")
+    if mode == "advanced":
+        print("Advanced features enabled:")
+        if config.get("use_peak_act", False):
+            print("  - Peak rank act weighting")
+        if config.get("use_role_balancing", False):
+            print("  - Role balancing")
+        if config.get("use_region_debuff", False):
+            print("  - Region-based adjustments")
+        if config.get("use_returning_player_stats", False):
+            print("  - Returning player stats (percentile-based)")
 
     # Determine players file path from config
     players_file = config.get("players_file", "players.json")
@@ -814,9 +1381,15 @@ def main():
     export_player_scores(players_data, config, output_file)
 
     # Build groups
-    groups = build_groups(players_data, config)
+    groups, excluded_groups = build_groups(players_data, config)
     total_players = sum(g["size"] for g in groups)
-    print(f"Total players = {total_players} in {len(groups)} groups.")
+    excluded_players = sum(g["size"] for g in excluded_groups)
+
+    print(f"Total players for optimization = {total_players} in {len(groups)} groups.")
+    if excluded_groups:
+        print(
+            f"Excluded players = {excluded_players} in {len(excluded_groups)} groups (scores calculated but not optimized)."
+        )
 
     # Find the best subset of players
     best_subset = find_valid_subset(groups)
@@ -857,7 +1430,9 @@ def main():
     leftover_players = sum(g["size"] for g in leftover_groups)
 
     # Calculate statistics
-    min_score, max_score, score_range, std_dev = calculate_statistics(best_teams)
+    min_score, max_score, score_range, std_dev, avg_role_balance = calculate_statistics(
+        best_teams, config
+    )
 
     # Print results
     print("\n==== Best Team Arrangement ====")
@@ -865,14 +1440,42 @@ def main():
     print(f"Score difference across teams = {score_range:.2f}")
     print(f"Standard deviation of team scores = {std_dev:.2f}")
 
+    if mode == "advanced" and config.get("use_role_balancing", False):
+        print(f"Average role balance score = {avg_role_balance:.2f}/5.0")
+
     # Print team compositions
     team_scores = []
     for i, team in enumerate(best_teams, start=1):
         team_scores.append(team["team_score"])
         print(f"\nTEAM {i}: total score = {team['team_score']:.2f}")
+
+        if mode == "advanced" and config.get("use_role_balancing", False):
+            # Show role composition
+            team_roles = []
+            for group in team["groups"]:
+                team_roles.extend(group.get("roles", []))
+            role_balance = get_role_balance_score(team_roles)
+            role_counts = {}
+            for role in team_roles:
+                role_counts[role] = role_counts.get(role, 0) + 1
+            role_summary = ", ".join(
+                [f"{role}:{count}" for role, count in sorted(role_counts.items())]
+            )
+            print(f"  Roles: {role_summary} (balance: {role_balance:.1f}/5.0)")
+
         for grp in sorted(team["groups"], key=lambda g: g["sum_score"], reverse=True):
+            # Show detailed role info for each player in advanced mode
+            if mode == "advanced":
+                member_roles = []
+                for member in grp["members"]:
+                    role_display = get_player_role_display(member, players_data)
+                    member_roles.append(f"{member}({role_display})")
+                members_str = ", ".join(member_roles)
+            else:
+                members_str = ", ".join(grp["members"])
+
             print(
-                f"  Group {grp['group_id']} (size={grp['size']}, score={grp['sum_score']:.2f}) => {', '.join(grp['members'])}"
+                f"  Group {grp['group_id']} (size={grp['size']}, score={grp['sum_score']:.2f}) => {members_str}"
             )
 
     # Print score comparison
@@ -889,11 +1492,79 @@ def main():
     if leftover_groups:
         print(f"\nLeftover groups (subs) totaling {leftover_players} players:")
         for grp in sorted(leftover_groups, key=lambda g: g["sum_score"], reverse=True):
+            # Show detailed role info for each player in advanced mode
+            if mode == "advanced":
+                member_roles = []
+                for member in grp["members"]:
+                    role_display = get_player_role_display(member, players_data)
+                    member_roles.append(f"{member}({role_display})")
+                members_str = ", ".join(member_roles)
+            else:
+                members_str = ", ".join(grp["members"])
+
             print(
-                f"  Group {grp['group_id']} (size={grp['size']}, score={grp['sum_score']:.2f}) => {', '.join(grp['members'])}"
+                f"  Group {grp['group_id']} (size={grp['size']}, score={grp['sum_score']:.2f}) => {members_str}"
             )
     else:
         print("\nNo leftover groups - all players assigned to teams!")
+
+    # Display excluded groups information
+    display_excluded_groups(excluded_groups, config, players_data)
+
+
+def display_excluded_groups(excluded_groups, config, players_data):
+    """
+    Display information about excluded groups (e.g., 5-stacks)
+
+    Args:
+        excluded_groups: List of group objects that were excluded from optimization
+        config: Dict containing weight configuration
+        players_data: Dict containing all player data
+    """
+    if not excluded_groups:
+        return
+
+    print(f"\n🚫 Excluded Groups (not participating in team optimization):")
+    print("=" * 60)
+
+    for group in excluded_groups:
+        mode = config.get("mode", "basic")
+
+        print(
+            f"\nGroup {group['group_id']} ({group['size']} players) - Total Score: {group['sum_score']:.2f}"
+        )
+
+        # Show detailed role info for each player in advanced mode
+        if mode == "advanced":
+            member_roles = []
+            for member in group["members"]:
+                role_display = get_player_role_display(member, players_data)
+                member_roles.append(f"{member}({role_display})")
+            members_str = ", ".join(member_roles)
+        else:
+            members_str = ", ".join(group["members"])
+
+        print(f"  Members: {members_str}")
+
+
+def get_player_role_display(player_name, players_data):
+    """
+    Get formatted role display string for a player
+
+    Args:
+        player_name: Name of the player
+        players_data: Dictionary containing all player data
+
+    Returns:
+        str: Formatted role string (e.g., "duelist/sentinel" for multi-role)
+    """
+    player_info = players_data.get(player_name, {})
+    player_role = player_info.get("role", "flex")
+
+    if isinstance(player_role, list):
+        return "/".join(player_role)
+    else:
+        return player_role
 
 
 if __name__ == "__main__":
