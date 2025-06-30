@@ -554,15 +554,15 @@ def find_valid_subset(groups):
     # Separate groups into returning player groups and others
     returning_groups = []
     other_groups = []
-    
+
     for i, group in enumerate(groups):
         if group.get("has_returning_player", False):
             returning_groups.append((i, group))
         else:
             other_groups.append((i, group))
-    
+
     print(f"Found {len(returning_groups)} groups with returning players")
-    
+
     # Quick optimization: if we need to remove players, prioritize keeping returning players
     remainder = total_size % 5
     players_to_remove = remainder if remainder <= 2 else 5 - remainder
@@ -572,18 +572,18 @@ def find_valid_subset(groups):
         returning_indices = [idx for idx, _ in returning_groups]
         returning_size = sum(groups[idx]["size"] for idx in returning_indices)
         remaining_size_needed = total_size - returning_size
-        
+
         # Check if we can find a subset from other groups that complements returning groups
         other_indices = [idx for idx, _ in other_groups]
         other_sizes = [groups[idx]["size"] for idx in other_indices]
-        
+
         # We need the total to be divisible by 5
         target_other_size = remaining_size_needed
         while (returning_size + target_other_size) % 5 != 0:
             target_other_size -= 1
             if target_other_size < 0:
                 break
-        
+
         if target_other_size >= 0:
             # Try to find a subset of other groups with the target size
             subset_indices = find_subset_with_sum(other_sizes, target_other_size)
@@ -592,13 +592,15 @@ def find_valid_subset(groups):
                 final_indices = returning_indices + selected_other_indices
                 final_size = sum(groups[i]["size"] for i in final_indices)
                 if final_size % 5 == 0:
-                    print(f"✅ Found solution keeping ALL returning player groups! Total: {final_size} players")
+                    print(
+                        f"✅ Found solution keeping ALL returning player groups! Total: {final_size} players"
+                    )
                     return final_indices
 
     # If we can't keep all returning players, fall back to the original algorithm
     # but still prioritize returning players when possible
     print("⚠️  Cannot keep all returning player groups, using fallback algorithm...")
-    
+
     # Sort groups by priority: returning players first, then by size (ascending)
     def group_priority(indexed_group):
         idx, group = indexed_group
@@ -607,7 +609,7 @@ def find_valid_subset(groups):
         # Returning player groups get negative priority (higher priority)
         # Smaller groups get higher priority for removal
         return (not has_returning, size)
-    
+
     groups_with_indices = [(i, groups[i]) for i in range(len(groups))]
     groups_with_indices.sort(key=group_priority)
 
@@ -618,14 +620,22 @@ def find_valid_subset(groups):
     for idx, group in groups_with_indices:
         if removed_size + group["size"] <= players_to_remove:
             # Only remove if it's not a returning player group, unless we have no choice
-            if not group.get("has_returning_player", False) or len(removed_indices) == 0:
+            if (
+                not group.get("has_returning_player", False)
+                or len(removed_indices) == 0
+            ):
                 removed_indices.add(idx)
                 removed_size += group["size"]
                 if (total_size - removed_size) % 5 == 0:
-                    remaining_returning = sum(1 for i in range(n) 
-                                            if i not in removed_indices and 
-                                            groups[i].get("has_returning_player", False))
-                    print(f"✅ Found solution keeping {remaining_returning} returning player groups")
+                    remaining_returning = sum(
+                        1
+                        for i in range(n)
+                        if i not in removed_indices
+                        and groups[i].get("has_returning_player", False)
+                    )
+                    print(
+                        f"✅ Found solution keeping {remaining_returning} returning player groups"
+                    )
                     return [i for i in range(n) if i not in removed_indices]
 
     # If simple approach didn't work, fall back to more systematic search
@@ -642,9 +652,12 @@ def find_valid_subset(groups):
 
         subset = find_subset_with_sum(sizes, target)
         if subset:
-            remaining_returning = sum(1 for i in subset 
-                                    if groups[i].get("has_returning_player", False))
-            print(f"Found solution with {remaining_returning} returning player groups via DP")
+            remaining_returning = sum(
+                1 for i in subset if groups[i].get("has_returning_player", False)
+            )
+            print(
+                f"Found solution with {remaining_returning} returning player groups via DP"
+            )
             return subset
 
     # Final fallback: just remove smallest groups until divisible by 5
@@ -654,8 +667,10 @@ def find_valid_subset(groups):
     current_total = total_size
 
     # Sort by priority: non-returning players first, then by size
-    groups_by_priority = sorted(enumerate(groups), 
-                               key=lambda x: (x[1].get("has_returning_player", False), x[1]["size"]))
+    groups_by_priority = sorted(
+        enumerate(groups),
+        key=lambda x: (x[1].get("has_returning_player", False), x[1]["size"]),
+    )
 
     for idx, group in groups_by_priority:
         if current_total % 5 == 0:
@@ -664,8 +679,9 @@ def find_valid_subset(groups):
             remaining_indices.remove(idx)
             current_total -= group["size"]
 
-    remaining_returning = sum(1 for i in remaining_indices 
-                            if groups[i].get("has_returning_player", False))
+    remaining_returning = sum(
+        1 for i in remaining_indices if groups[i].get("has_returning_player", False)
+    )
     print(f"Final fallback kept {remaining_returning} returning player groups")
     return remaining_indices
 
@@ -1715,14 +1731,20 @@ def main():
     chosen_groups = [groups[i] for i in best_subset]
     best_size = sum(g["size"] for g in chosen_groups)
     num_teams = best_size // 5
-    
+
     # Count returning players in chosen groups
-    chosen_returning_groups = sum(1 for grp in chosen_groups if grp.get("has_returning_player", False))
-    total_returning_groups = sum(1 for grp in groups if grp.get("has_returning_player", False))
-    
+    chosen_returning_groups = sum(
+        1 for grp in chosen_groups if grp.get("has_returning_player", False)
+    )
+    total_returning_groups = sum(
+        1 for grp in groups if grp.get("has_returning_player", False)
+    )
+
     print(f"Found optimal subset with {best_size} players (divisible by 5).")
     print(f"Creating {num_teams} balanced teams...")
-    print(f"✅ Included {chosen_returning_groups}/{total_returning_groups} groups with returning players")
+    print(
+        f"✅ Included {chosen_returning_groups}/{total_returning_groups} groups with returning players"
+    )
 
     # Print some basic stats about the groups
     print("\nGroup score distribution:")
@@ -1812,11 +1834,18 @@ def main():
     # Print leftover players
     if leftover_groups:
         # Count returning players in leftover groups
-        leftover_returning_count = sum(1 for grp in leftover_groups 
-                                     if grp.get("has_returning_player", False))
-        returning_status = f" (⚠️  {leftover_returning_count} groups contain returning players)" if leftover_returning_count > 0 else ""
-        
-        print(f"\nLeftover groups (subs) totaling {leftover_players} players{returning_status}:")
+        leftover_returning_count = sum(
+            1 for grp in leftover_groups if grp.get("has_returning_player", False)
+        )
+        returning_status = (
+            f" (⚠️  {leftover_returning_count} groups contain returning players)"
+            if leftover_returning_count > 0
+            else ""
+        )
+
+        print(
+            f"\nLeftover groups (subs) totaling {leftover_players} players{returning_status}:"
+        )
         for grp in sorted(leftover_groups, key=lambda g: g["sum_score"], reverse=True):
             # Show detailed role info for each player in advanced mode
             if mode == "advanced":
@@ -1830,13 +1859,21 @@ def main():
                         member_roles.append(f"{member}({role_display})")
                 members_str = ", ".join(member_roles)
             else:
-                members_str = ", ".join([
-                    f"{member}⭐" if players_data[member].get("is_returning_player", False) else member
-                    for member in grp["members"]
-                ])
+                members_str = ", ".join(
+                    [
+                        (
+                            f"{member}⭐"
+                            if players_data[member].get("is_returning_player", False)
+                            else member
+                        )
+                        for member in grp["members"]
+                    ]
+                )
 
             # Add returning player indicator to group info
-            returning_indicator = " 🔄" if grp.get("has_returning_player", False) else ""
+            returning_indicator = (
+                " 🔄" if grp.get("has_returning_player", False) else ""
+            )
             print(
                 f"  Group {grp['group_id']} (size={grp['size']}, score={grp['sum_score']:.2f}){returning_indicator} => {members_str}"
             )
@@ -1847,28 +1884,40 @@ def main():
     display_excluded_groups(excluded_groups, config, players_data)
 
     # Final summary about returning player inclusion
-    all_returning_groups = sum(1 for grp in groups if grp.get("has_returning_player", False))
-    chosen_returning_groups = sum(1 for grp in chosen_groups if grp.get("has_returning_player", False))
-    leftover_returning_groups = sum(1 for grp in leftover_groups if grp.get("has_returning_player", False))
-    excluded_returning_groups = sum(1 for grp in excluded_groups if grp.get("has_returning_player", False))
-    
-    print("\n" + "="*60)
+    all_returning_groups = sum(
+        1 for grp in groups if grp.get("has_returning_player", False)
+    )
+    chosen_returning_groups = sum(
+        1 for grp in chosen_groups if grp.get("has_returning_player", False)
+    )
+    leftover_returning_groups = sum(
+        1 for grp in leftover_groups if grp.get("has_returning_player", False)
+    )
+    excluded_returning_groups = sum(
+        1 for grp in excluded_groups if grp.get("has_returning_player", False)
+    )
+
+    print("\n" + "=" * 60)
     print("📊 RETURNING PLAYER SUMMARY")
-    print("="*60)
+    print("=" * 60)
     print(f"Total groups with returning players: {all_returning_groups}")
     print(f"  ✅ Included in teams: {chosen_returning_groups}")
     if leftover_returning_groups > 0:
         print(f"  ⚠️  Left as subs: {leftover_returning_groups}")
     if excluded_returning_groups > 0:
         print(f"  🚫 Excluded (5+ stacks): {excluded_returning_groups}")
-    
+
     if chosen_returning_groups == all_returning_groups - excluded_returning_groups:
-        print("🎉 SUCCESS: All eligible returning player groups were included in teams!")
+        print(
+            "🎉 SUCCESS: All eligible returning player groups were included in teams!"
+        )
     elif leftover_returning_groups == 0:
         print("✅ Good: No returning player groups left as subs")
     else:
-        print(f"⚠️  Warning: {leftover_returning_groups} returning player groups left as subs")
-    print("="*60)
+        print(
+            f"⚠️  Warning: {leftover_returning_groups} returning player groups left as subs"
+        )
+    print("=" * 60)
 
 
 def display_excluded_groups(excluded_groups, config, players_data):
@@ -1907,10 +1956,16 @@ def display_excluded_groups(excluded_groups, config, players_data):
                     member_roles.append(f"{member}({role_display})")
             members_str = ", ".join(member_roles)
         else:
-            members_str = ", ".join([
-                f"{member}⭐" if players_data[member].get("is_returning_player", False) else member
-                for member in group["members"]
-            ])
+            members_str = ", ".join(
+                [
+                    (
+                        f"{member}⭐"
+                        if players_data[member].get("is_returning_player", False)
+                        else member
+                    )
+                    for member in group["members"]
+                ]
+            )
 
         print(f"  Members: {members_str}")
 
