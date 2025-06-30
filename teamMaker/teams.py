@@ -260,12 +260,48 @@ def compute_player_score(player_info, config):
     Returns:
         float: Player's calculated score
     """
+    # Use the detailed computation and return just the final score for compatibility
+    breakdown = compute_player_score_detailed(player_info, config)
+    return breakdown["final_score"]
+
+
+def compute_player_score_detailed(player_info, config):
+    """
+    Compute a player's score with detailed breakdown of all components
+    Supports both basic and advanced modes
+
+    Args:
+        player_info: Dict containing player data
+        config: Dict containing weight configuration
+
+    Returns:
+        dict: Detailed breakdown of score calculation
+    """
     mode = config.get("mode", "basic")
     current_val = rank_to_numeric(player_info["current_rank"], config["rank_values"])
     peak_val = rank_to_numeric(player_info["peak_rank"], config["rank_values"])
 
+    breakdown = {
+        "mode": mode,
+        "rank_components": {
+            "current_rank": player_info["current_rank"],
+            "current_rank_value": current_val,
+            "current_rank_weighted": config["weight_current"] * current_val,
+            "peak_rank": player_info["peak_rank"],
+            "peak_rank_value": peak_val,
+            "peak_rank_weighted": config["weight_peak"] * peak_val,
+        },
+        "tracker_components": {},
+        "advanced_components": {},
+        "final_score": 0.0,
+    }
+
     # Base score from ranks
-    score = config["weight_current"] * current_val + config["weight_peak"] * peak_val
+    base_score = (
+        config["weight_current"] * current_val + config["weight_peak"] * peak_val
+    )
+    breakdown["base_score"] = base_score
+    current_score = base_score
 
     # Add tracker scores if enabled (both modes)
     if (
@@ -290,13 +326,29 @@ def compute_player_score(player_info, config):
             rank_ratio = current_val / peak_val
             consistency_factor = 1.0 + (0.1 * rank_ratio)
 
+        breakdown["tracker_components"] = {
+            "enabled": True,
+            "current_tracker": current_tracker,
+            "current_tracker_score": current_tracker_score,
+            "peak_tracker": peak_tracker,
+            "peak_tracker_score": peak_tracker_score,
+            "consistency_factor": consistency_factor,
+            "tracker_total": current_tracker_score + peak_tracker_score,
+        }
+
         # Combine all factors
-        score = (
-            score + current_tracker_score + peak_tracker_score
+        current_score = (
+            current_score + current_tracker_score + peak_tracker_score
         ) * consistency_factor
+        breakdown["score_after_tracker"] = current_score
+    else:
+        breakdown["tracker_components"] = {"enabled": False}
+        breakdown["score_after_tracker"] = current_score
 
     # Advanced mode features
     if mode == "advanced":
+        advanced_breakdown = {}
+
         # Peak rank act weighting
         if config.get("use_peak_act", False) and "peak_rank_act" in player_info:
             acts_ago = parse_peak_act(player_info["peak_rank_act"])
@@ -304,9 +356,20 @@ def compute_player_score(player_info, config):
                 acts_ago, config.get("peak_act_decay_rate", 0.9)
             )
             peak_act_bonus = config.get("weight_peak_act", 0.15) * peak_val * act_weight
-            score += peak_act_bonus
+            current_score += peak_act_bonus
 
-        # Previous season stats handling - replaces part of ranked stats for returning players
+            advanced_breakdown["peak_act"] = {
+                "enabled": True,
+                "peak_rank_act": player_info["peak_rank_act"],
+                "acts_ago": acts_ago,
+                "act_weight": act_weight,
+                "peak_act_bonus": peak_act_bonus,
+            }
+        else:
+            advanced_breakdown["peak_act"] = {"enabled": False}
+
+        # Previous season stats handling
+        previous_season_score = 0.0
         if config.get("use_returning_player_stats", False) and player_info.get(
             "is_returning_player", False
         ):
@@ -318,16 +381,93 @@ def compute_player_score(player_info, config):
                 )  # 70% ranked
                 previous_weight = 1.0 - ranked_weight  # 30% previous season
 
-                # Blend current score (ranked-based) with previous season score
-                score = score * ranked_weight + previous_season_score * previous_weight
+                # Store pre-blend score
+                pre_blend_score = current_score
 
-        # Region debuff for non-EU players (ping penalty only)
+                # Smart blending: only blend if previous season helps or is very close
+                score_difference = previous_season_score - current_score
+
+                if previous_season_score >= current_score:
+                    # Previous season is better - always blend to help player
+                    current_score = (
+                        current_score * ranked_weight
+                        + previous_season_score * previous_weight
+                    )
+                    blend_reason = "Previous season boosted score"
+                elif abs(score_difference) <= 3.0:
+                    # Scores are close - blend normally to add consistency
+                    current_score = (
+                        current_score * ranked_weight
+                        + previous_season_score * previous_weight
+                    )
+                    blend_reason = "Scores close - blended for consistency"
+                else:
+                    # Previous season much lower - reduce blend weight to minimize penalty
+                    reduced_previous_weight = (
+                        previous_weight * 0.5
+                    )  # Reduce impact by half
+                    adjusted_ranked_weight = 1.0 - reduced_previous_weight
+                    current_score = (
+                        current_score * adjusted_ranked_weight
+                        + previous_season_score * reduced_previous_weight
+                    )
+                    blend_reason = f"Previous season lower - reduced blend weight to {reduced_previous_weight:.1f}"
+
+                advanced_breakdown["previous_season"] = {
+                    "enabled": True,
+                    "is_returning_player": True,
+                    "previous_season_score": previous_season_score,
+                    "ranked_weight": ranked_weight,
+                    "previous_weight": previous_weight,
+                    "pre_blend_score": pre_blend_score,
+                    "post_blend_score": current_score,
+                    "score_difference": score_difference,
+                    "blend_reason": blend_reason,
+                    "previous_season_stats": player_info.get(
+                        "previous_season_stats", {}
+                    ),
+                }
+            else:
+                advanced_breakdown["previous_season"] = {
+                    "enabled": True,
+                    "is_returning_player": True,
+                    "previous_season_score": 0.0,
+                    "note": "No valid previous season data",
+                }
+        else:
+            advanced_breakdown["previous_season"] = {
+                "enabled": False,
+                "is_returning_player": player_info.get("is_returning_player", False),
+            }
+
+        # Region debuff for non-EU players
         if config.get("use_region_debuff", False):
             region = player_info.get("region", "EU").upper()
             if region != "EU":
-                score *= config.get("non_eu_debuff", 0.95)
+                pre_region_score = current_score
+                current_score *= config.get("non_eu_debuff", 0.95)
+                advanced_breakdown["region_debuff"] = {
+                    "enabled": True,
+                    "region": region,
+                    "debuff_multiplier": config.get("non_eu_debuff", 0.95),
+                    "pre_debuff_score": pre_region_score,
+                    "post_debuff_score": current_score,
+                }
+            else:
+                advanced_breakdown["region_debuff"] = {
+                    "enabled": True,
+                    "region": region,
+                    "debuff_applied": False,
+                }
+        else:
+            advanced_breakdown["region_debuff"] = {"enabled": False}
 
-    return score
+        breakdown["advanced_components"] = advanced_breakdown
+    else:
+        breakdown["advanced_components"] = {"mode": "basic"}
+
+    breakdown["final_score"] = current_score
+    return breakdown
 
 
 def build_groups(players_data, config):
@@ -505,7 +645,7 @@ def find_subset_with_sum(sizes, target):
 
 def export_player_scores(players_data, config, output_file=None):
     """
-    Calculate and export the score for each player to a JSON file
+    Calculate and export the score for each player to a JSON file with detailed breakdown
 
     Args:
         players_data: Dict containing player information
@@ -521,22 +661,24 @@ def export_player_scores(players_data, config, output_file=None):
 
     player_scores = {}
 
-    # Calculate score for each player
+    # Calculate score for each player with detailed breakdown
     for player_name, player_info in players_data.items():
-        score = compute_player_score(player_info, config)
+        score_breakdown = compute_player_score_detailed(player_info, config)
+
         player_scores[player_name] = {
-            "score": round(score, 2),
+            "final_score": round(score_breakdown["final_score"], 2),
             "current_rank": player_info.get("current_rank", "Unknown"),
             "peak_rank": player_info.get("peak_rank", "Unknown"),
             "tracker_current": player_info.get("tracker_current", 0),
             "tracker_peak": player_info.get("tracker_peak", 0),
+            "breakdown": score_breakdown,
         }
 
     # Sort by score (descending)
     sorted_scores = {
         k: v
         for k, v in sorted(
-            player_scores.items(), key=lambda item: item[1]["score"], reverse=True
+            player_scores.items(), key=lambda item: item[1]["final_score"], reverse=True
         )
     }
 
@@ -546,6 +688,45 @@ def export_player_scores(players_data, config, output_file=None):
 
     print(f"Player scores exported to {output_file}")
     return sorted_scores
+
+
+def export_minimal_player_scores(players_data, config, output_file=None):
+    """
+    Calculate and export minimal player scores (just names and final scores) to a JSON file
+
+    Args:
+        players_data: Dict containing player information
+        config: Dict containing weight configuration
+        output_file: Optional filename for the output file (default: player_scores_minimal.json)
+
+    Returns:
+        dict: Dictionary mapping player names to their final scores
+    """
+    if output_file is None:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        output_file = os.path.join(script_dir, "player_scores_minimal.json")
+
+    minimal_scores = {}
+
+    # Calculate score for each player (just final score)
+    for player_name, player_info in players_data.items():
+        final_score = compute_player_score(player_info, config)
+        minimal_scores[player_name] = round(final_score, 2)
+
+    # Sort by score (descending)
+    sorted_minimal_scores = {
+        k: v
+        for k, v in sorted(
+            minimal_scores.items(), key=lambda item: item[1], reverse=True
+        )
+    }
+
+    # Write to file
+    with open(output_file, "w") as f:
+        json.dump(sorted_minimal_scores, f, indent=2)
+
+    print(f"Minimal player scores exported to {output_file}")
+    return sorted_minimal_scores
 
 
 def evaluate_teams(teams, config=None):
@@ -1283,8 +1464,8 @@ def calculate_previous_season_score(player_info, config):
 
     # Handle both single season object and list of seasons
     if isinstance(previous_stats, list):
-        # Multiple seasons - take the best percentile
-        best_score = 0.0
+        # Multiple seasons - calculate weighted average of converted scores (not raw ratings)
+        season_scores = {}
         for stats in previous_stats:
             season = stats.get("season", "").upper()
             rating = stats.get("adjusted_rating", 0.0)
@@ -1298,18 +1479,65 @@ def calculate_previous_season_score(player_info, config):
             if season not in season_data:
                 continue  # Unknown season
 
-            # Calculate percentile
+            # Calculate percentile for this season
             percentile = calculate_rating_percentile(rating, season_data[season])
 
             # Convert percentile to score on same scale as ranked scores
-            # Scale percentile (0-100) to rank value scale (1-25)
-            # This makes previous season score comparable to ranked score
-            season_score = (
-                1 + (percentile / 100.0) * 24
-            )  # Scale to 1-25 like rank values
-            best_score = max(best_score, season_score)
+            # Scale percentile (0-100) to rank value scale (1-30) with bonus for top performers
+            # Base scale: 1-30 instead of 1-25 to give more room for historical excellence
+            base_score = 1 + (percentile / 100.0) * 29  # Scale to 1-30
 
-        return best_score
+            # Additional bonus for top historical performers
+            if percentile >= 95.0:  # Top 5%
+                bonus = 5.0 + (percentile - 95.0) * 2.0  # Up to 15 extra points for #1
+            elif percentile >= 90.0:  # Top 10%
+                bonus = 2.5 + (percentile - 90.0) * 0.5  # Up to 5 extra points
+            elif percentile >= 75.0:  # Top 25%
+                bonus = (percentile - 75.0) * 0.167  # Up to 2.5 extra points
+            else:
+                bonus = 0.0
+
+            season_score = base_score + bonus
+            season_scores[season] = season_score
+
+        # Calculate weighted average of the converted scores (not raw ratings)
+        if not season_scores:
+            return 0.0
+
+        if len(season_scores) == 1:
+            # Only one season available, return its converted score
+            return list(season_scores.values())[0]
+
+        # Weighted average for multiple converted scores: S9 = 60%, S8 = 40%
+        total_weighted_score = 0.0
+        total_weight = 0.0
+
+        if "S9" in season_scores:
+            total_weighted_score += (
+                season_scores["S9"] * 0.6
+            )  # 60% weight for S9 converted score
+            total_weight += 0.6
+
+        if "S8" in season_scores:
+            total_weighted_score += (
+                season_scores["S8"] * 0.4
+            )  # 40% weight for S8 converted score
+            total_weight += 0.4
+
+        # Handle other seasons with equal weight if they exist
+        other_seasons = {
+            k: v for k, v in season_scores.items() if k not in ["S8", "S9"]
+        }
+        if other_seasons:
+            remaining_weight = 1.0 - total_weight
+            weight_per_other = (
+                remaining_weight / len(other_seasons) if remaining_weight > 0 else 0.0
+            )
+            for season_score in other_seasons.values():
+                total_weighted_score += season_score * weight_per_other
+                total_weight += weight_per_other
+
+        return total_weighted_score / total_weight if total_weight > 0 else 0.0
     else:
         # Single season object (backwards compatibility)
         season = previous_stats.get("season", "").upper()
@@ -1328,8 +1556,20 @@ def calculate_previous_season_score(player_info, config):
         percentile = calculate_rating_percentile(rating, season_data[season])
 
         # Convert percentile to score on same scale as ranked scores
-        # Scale percentile (0-100) to rank value scale (1-25)
-        season_score = 1 + (percentile / 100.0) * 24  # Scale to 1-25 like rank values
+        # Scale percentile (0-100) to rank value scale (1-30) with bonus for top performers
+        base_score = 1 + (percentile / 100.0) * 29  # Scale to 1-30
+
+        # Additional bonus for top historical performers
+        if percentile >= 95.0:  # Top 5%
+            bonus = 5.0 + (percentile - 95.0) * 2.0  # Up to 15 extra points for #1
+        elif percentile >= 90.0:  # Top 10%
+            bonus = 2.5 + (percentile - 90.0) * 0.5  # Up to 5 extra points
+        elif percentile >= 75.0:  # Top 25%
+            bonus = (percentile - 75.0) * 0.167  # Up to 2.5 extra points
+        else:
+            bonus = 0.0
+
+        season_score = base_score + bonus
 
         return season_score
 
@@ -1376,9 +1616,12 @@ def main():
         print(f"Error: Player file '{players_path}' is not valid JSON.")
         return
 
-    # Always export player scores by default
-    output_file = os.path.join(script_dir, "player_scores.json")
-    export_player_scores(players_data, config, output_file)
+    # Always export player scores by default (both detailed and minimal)
+    detailed_output_file = os.path.join(script_dir, "player_scores.json")
+    minimal_output_file = os.path.join(script_dir, "player_scores_minimal.json")
+
+    export_player_scores(players_data, config, detailed_output_file)
+    export_minimal_player_scores(players_data, config, minimal_output_file)
 
     # Build groups
     groups, excluded_groups = build_groups(players_data, config)

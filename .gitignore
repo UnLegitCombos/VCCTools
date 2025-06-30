@@ -160,6 +160,7 @@ cython_debug/
 #.idea/
 
 teamMaker/player_scores.json
+teamMaker/player_scores_minimal.json
 
 # Sensitive configuration files
 teamMaker/config.json
