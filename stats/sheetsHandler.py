@@ -19,7 +19,7 @@ def load_config():
             return config
     except Exception as e:
         logging.error(f"Failed to load configuration: {e}")
-        return {"sheetId": "VCC S9 SB"}  # Default value
+        return {"sheetId": "VCC S10 SB"}  # Default value
 
 
 def initSheet():
@@ -28,7 +28,7 @@ def initSheet():
     If no headers exist, append them.
     """
     config = load_config()
-    sheet_id = config.get("sheetId", "VCC S9 SB")  # Default value if not found
+    sheet_id = config.get("sheetId", "VCC S10 SB")  # Default value if not found
 
     try:
         creds = gspread.service_account(filename="credentials.json")

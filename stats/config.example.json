@@ -1,4 +1,6 @@
 {
   "apiKey": "YOUR_HENRIK_API_KEY_HERE",
-  "sheetId": "YOUR_GOOGLE_SHEET_NAME_HERE"
+  "sheetId": "YOUR_GOOGLE_SHEET_NAME_HERE",
+  "apiBatchSize": 5,
+  "apiBatchDelay": 30
 }

@@ -328,15 +328,15 @@ def calculateClPercent(player, matchDict=None):
 
 def computeRating(kd, adr, kpr, apr, dpr, fkpr, fdpr, clPercent, kast):
     rating = (
-        0.585511
-        + (0.115344 * kd)
-        + (0.002184 * adr)
-        + (0.596918 * kpr)
-        + (0.208228 * apr)
-        + (-0.655516 * dpr)
-        + (0.003351 * fkpr)
-        + (-0.404202 * fdpr)
-        + (0.028723 * clPercent)
-        + (0.040832 * kast)
+        0.702855
+        + 0.002500 * adr
+        + 0.714459 * kpr
+        + 0.209346 * apr
+        - 0.824487 * dpr
+        + 0.032957 * kast
+        + 0.208877 * fkpr
+        - 0.208877 * fdpr
+        + 0.037841 * clPercent
     )
+
     return round(rating, 3)

@@ -9,7 +9,7 @@ from matchList import (
     addTournamentMatch,
     addFilteredMatch,
 )
-from apiHandler import fetchCustomMatchHistory
+from apiHandler import fetchCustomMatchHistory, fetchCustomMatchHistoryBatched
 from statsCalculations import (
     calculateAcs,
     calculateKast,
@@ -31,20 +31,26 @@ logging.basicConfig(
 )
 
 
-# Load API key from config file
-def load_api_key():
+# Load configuration from config file
+def load_config():
     try:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.join(script_dir, "config.json")
         with open(config_path, "r") as f:
             config = json.load(f)
-            return config.get("apiKey")
+            return config
     except Exception as e:
-        logging.error(f"Failed to load API key from config: {e}")
-        return None
+        logging.error(f"Failed to load config: {e}")
+        return {"apiKey": None}
 
 
-apiKey = load_api_key()
+# Load API key from config file (backward compatibility)
+def load_api_key():
+    config = load_config()
+    return config.get("apiKey")
+
+
+apiKey = load_api_key()  # Keep for backward compatibility with any other code that might use it
 
 
 def displayMatchesForSelection(matches, matchList, filteringMode="automatic"):
@@ -287,6 +293,14 @@ def main():
     logging.info("Initializing Google Sheets.")
     sheet = initSheet()
 
+    # Load configuration
+    config = load_config()
+    apiKey = config.get("apiKey")
+    
+    # Get batching configuration with defaults
+    apiBatchSize = config.get("apiBatchSize", 3)
+    apiBatchDelay = config.get("apiBatchDelay", 5)
+
     masterList = loadMasterList()
     matchList = loadMatchList()
 
@@ -302,9 +316,10 @@ def main():
 
     allNewMatches = []
 
-    for playerName, playerTag in selectedPlayers:
-        logging.info(f"Fetching matches for {playerName}#{playerTag}.")
-        matches, error = fetchCustomMatchHistory(region, playerName, playerTag, apiKey)
+    # Use batched API requests for better rate limiting
+    batchResults = fetchCustomMatchHistoryBatched(region, selectedPlayers, apiKey, batchSize=apiBatchSize, delay=apiBatchDelay)
+    
+    for playerName, playerTag, matches, error in batchResults:
         if error:
             logging.error(f"{playerName}#{playerTag}: {error}")
             continue
