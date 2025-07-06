@@ -171,3 +171,4 @@ stats/credentials.json
 # Data files
 stats/masterList.json
 stats/matchList.json
+formula/data/

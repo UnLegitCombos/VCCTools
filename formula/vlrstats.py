@@ -95,32 +95,30 @@ def scrape_all_years_combined(output_csv="vlr_data.csv"):
     url_gc24 = "https://www.vlr.gg/stats/?event_group_id=62&region=all&min_rounds=200&min_rating=0&agent=all&map_id=all&timespan=all"
     url_gc23 = "https://www.vlr.gg/stats/?event_group_id=38&region=all&min_rounds=200&min_rating=0&agent=all&map_id=all&timespan=all"
 
-    # Scrape all of 2023, then 2024, then 2025, with progress bars for each year
+    # List of all scraping tasks
+    scraping_tasks = [
+        (url_2023, "2023", "vct"),
+        (url_ch23, "2023", "chall"),
+        (url_gc23, "2023", "gc"),
+        (url_2024, "2024", "vct"),
+        (url_ch24, "2024", "chall"),
+        (url_gc24, "2024", "gc"),
+        (url_2025, "2025", "vct"),
+        (url_ch25, "2025", "chall"),
+        (url_gc25, "2025", "gc"),
+    ]
 
-    data_2023 = scrape_vlr_stats_for_url(url_2023, "2023", "vct", show_progress=True)
-    data_ch23 = scrape_vlr_stats_for_url(url_ch23, "2023", "chall", show_progress=True)
-    data_gc23 = scrape_vlr_stats_for_url(url_gc23, "2023", "gc", show_progress=True)
+    all_data = []
 
-    data_2024 = scrape_vlr_stats_for_url(url_2024, "2024", "vct", show_progress=True)
-    data_ch24 = scrape_vlr_stats_for_url(url_ch24, "2024", "chall", show_progress=True)
-    data_gc24 = scrape_vlr_stats_for_url(url_gc24, "2024", "gc", show_progress=True)
-
-    data_2025 = scrape_vlr_stats_for_url(url_2025, "2025", "vct", show_progress=True)
-    data_ch25 = scrape_vlr_stats_for_url(url_ch25, "2025", "chall", show_progress=True)
-    data_gc25 = scrape_vlr_stats_for_url(url_gc25, "2025", "gc", show_progress=True)
-
-    # Combine all rows
-    all_data = (
-        data_2023
-        + data_ch23
-        + data_gc23
-        + data_2024
-        + data_ch24
-        + data_gc24
-        + data_2025
-        + data_ch25
-        + data_gc25
-    )
+    # Single progress bar for all scraping tasks
+    with tqdm(
+        total=len(scraping_tasks), desc="Scraping VLR data", unit=" source"
+    ) as pbar:
+        for url, year, group in scraping_tasks:
+            pbar.set_postfix_str(f"{group} {year}")
+            data = scrape_vlr_stats_for_url(url, year, group, show_progress=False)
+            all_data.extend(data)
+            pbar.update(1)
 
     # Convert the list of lists into a DataFrame
     headers = [
@@ -147,7 +145,7 @@ def scrape_all_years_combined(output_csv="vlr_data.csv"):
     df.sort_values(by=["vlr_rating", "acs"], ascending=[False, False], inplace=True)
 
     # Write to CSV in the correct path (formula/data/vlr_data.csv)
-    output_path = "./data/vlr_data.csv"
+    output_path = "formula/data/vlr_data.csv"
     df.to_csv(output_path, index=False, encoding="utf-8")
     print(f"Saved {len(df)} total rows (sorted by rating, acs) to {output_path}")
 
