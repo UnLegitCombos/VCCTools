@@ -50,7 +50,9 @@ def load_api_key():
     return config.get("apiKey")
 
 
-apiKey = load_api_key()  # Keep for backward compatibility with any other code that might use it
+apiKey = (
+    load_api_key()
+)  # Keep for backward compatibility with any other code that might use it
 
 
 def displayMatchesForSelection(matches, matchList, filteringMode="automatic"):
@@ -296,7 +298,7 @@ def main():
     # Load configuration
     config = load_config()
     apiKey = config.get("apiKey")
-    
+
     # Get batching configuration with defaults
     apiBatchSize = config.get("apiBatchSize", 3)
     apiBatchDelay = config.get("apiBatchDelay", 5)
@@ -317,8 +319,10 @@ def main():
     allNewMatches = []
 
     # Use batched API requests for better rate limiting
-    batchResults = fetchCustomMatchHistoryBatched(region, selectedPlayers, apiKey, batchSize=apiBatchSize, delay=apiBatchDelay)
-    
+    batchResults = fetchCustomMatchHistoryBatched(
+        region, selectedPlayers, apiKey, batchSize=apiBatchSize, delay=apiBatchDelay
+    )
+
     for playerName, playerTag, matches, error in batchResults:
         if error:
             logging.error(f"{playerName}#{playerTag}: {error}")

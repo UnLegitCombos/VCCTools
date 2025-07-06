@@ -47,7 +47,9 @@ def fetchCustomMatchHistory(region, playerName, playerTag, apiKey=None):
         return [], str(e)
 
 
-def fetchCustomMatchHistoryBatched(region, playerList, apiKey=None, batchSize=3, delay=5):
+def fetchCustomMatchHistoryBatched(
+    region, playerList, apiKey=None, batchSize=3, delay=5
+):
     """
     Fetch custom matches for multiple players with batching and rate limiting.
 
@@ -64,14 +66,22 @@ def fetchCustomMatchHistoryBatched(region, playerList, apiKey=None, batchSize=3,
     results = []
 
     # Split players into batches
-    batches = [playerList[i : i + batchSize] for i in range(0, len(playerList), batchSize)]
+    batches = [
+        playerList[i : i + batchSize] for i in range(0, len(playerList), batchSize)
+    ]
     totalBatches = len(batches)
 
-    print(f"Fetching match history for {len(playerList)} players in {totalBatches} batches...")
-    logging.info(f"Starting batched API requests: {totalBatches} batches of {batchSize} players each")
+    print(
+        f"Fetching match history for {len(playerList)} players in {totalBatches} batches..."
+    )
+    logging.info(
+        f"Starting batched API requests: {totalBatches} batches of {batchSize} players each"
+    )
 
     for batchIndex, batch in enumerate(batches):
-        print(f"Processing batch {batchIndex + 1}/{totalBatches} ({len(batch)} players)")
+        print(
+            f"Processing batch {batchIndex + 1}/{totalBatches} ({len(batch)} players)"
+        )
         logging.info(f"Processing API batch {batchIndex + 1}/{totalBatches}")
 
         batchResults = []
@@ -81,7 +91,9 @@ def fetchCustomMatchHistoryBatched(region, playerList, apiKey=None, batchSize=3,
             logging.info(f"Fetching matches for {playerName}#{playerTag}")
             print(f"  Fetching: {playerName}#{playerTag}")
 
-            matches, error = fetchCustomMatchHistory(region, playerName, playerTag, apiKey)
+            matches, error = fetchCustomMatchHistory(
+                region, playerName, playerTag, apiKey
+            )
             batchResults.append((playerName, playerTag, matches, error))
 
             if error:
