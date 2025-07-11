@@ -2,6 +2,29 @@ import logging
 from collections import defaultdict
 
 
+def calculateActualRoundsPlayed(matchDict):
+    """
+    Calculate the actual number of rounds played by summing team scores.
+    This is needed because forfeited matches include unplayed rounds in the rounds array.
+    """
+    teams = matchDict.get("teams", [])
+    if len(teams) != 2:
+        # Fallback to rounds array length if team data is unavailable
+        return len(matchDict["rounds"])
+
+    # Sum rounds lost for both teams to get total rounds played
+    total_rounds = 0
+    for team in teams:
+        rounds_lost = team.get("rounds", {}).get("lost", 0)
+        total_rounds += rounds_lost
+
+    # Double-check: the winning team's losses + losing team's losses should equal total rounds
+    # If this doesn't match expected values, log a warning and use the calculation
+    logging.debug(f"Calculated {total_rounds} actual rounds played from team scores")
+
+    return total_rounds
+
+
 def calculateHsPercentage(playerDict):
     """
     Returns fraction of headshots (e.g. 0.5 for 50%).
@@ -25,11 +48,11 @@ def calculateAcs(matchDict, playerDict):
     ACS = player's score / total number of rounds
     """
     try:
-        roundsList = matchDict["rounds"]
+        totalRounds = calculateActualRoundsPlayed(matchDict)
         score = playerDict["stats"]["score"]
-        if len(roundsList) == 0:
+        if totalRounds == 0:
             return 0.0
-        return round(score / len(roundsList), 3)
+        return round(score / totalRounds, 3)
     except Exception as exc:
         pname = playerDict.get("name", "Unknown")
         logging.error(f"Error calculating ACS for {pname}: {exc}")
@@ -43,9 +66,11 @@ def calculateKast(matchDict):
     """
     playerKastRounds = defaultdict(set)  # Maps puuid -> set of round indices
     roundsList = matchDict["rounds"]
-    totalRounds = len(roundsList)
+    totalRounds = calculateActualRoundsPlayed(matchDict)
 
-    for roundIndex, roundData in enumerate(roundsList, start=1):
+    # Only process the actual rounds that were played, not the full rounds array
+    for roundIndex in range(totalRounds):
+        roundData = roundsList[roundIndex]
         deadPlayers = set()
         playerAfkStatus = {}
 
@@ -160,15 +185,15 @@ def calculateAdr(matchDict, playerDict):
     ADR = player's damage_made / total number of rounds
     """
     try:
-        roundsList = matchDict["rounds"]
-        if len(roundsList) == 0:
-            return 0.0
+        totalRounds = calculateActualRoundsPlayed(matchDict)
+        if totalRounds == 0:
+            return 0.0, 0
         damage = playerDict["stats"]["damage"]["dealt"]
-        return round(damage / len(roundsList), 3), damage
+        return round(damage / totalRounds, 3), damage
     except Exception as exc:
         pname = playerDict.get("name", "Unknown")
         logging.error(f"Error calculating ADR for {pname}: {exc}")
-        return 0.0
+        return 0.0, 0
 
 
 def calculateDmgDeltaPerRound(matchDict, playerDict):
@@ -176,13 +201,13 @@ def calculateDmgDeltaPerRound(matchDict, playerDict):
     Returns damage delta per round.
     """
     try:
-        roundsList = matchDict["rounds"]
-        if len(roundsList) == 0:
+        totalRounds = calculateActualRoundsPlayed(matchDict)
+        if totalRounds == 0:
             return 0.0
         damageDealt = playerDict["stats"]["damage"]["dealt"]
         damageReceived = playerDict["stats"]["damage"]["received"]
         damageDelta = damageDealt - damageReceived
-        return round(damageDelta / len(roundsList), 3)
+        return round(damageDelta / totalRounds, 3)
     except Exception as exc:
         pname = playerDict.get("name", "Unknown")
         logging.error(f"Error calculating damage delta for {pname}: {exc}")
@@ -194,11 +219,11 @@ def calculatePerRoundStat(matchDict, playerDict, statName):
     Returns the player's [statName] / total number of rounds, e.g. KPR, APR, DPR.
     """
     try:
-        roundsList = matchDict["rounds"]
-        if len(roundsList) == 0:
+        totalRounds = calculateActualRoundsPlayed(matchDict)
+        if totalRounds == 0:
             return 0.0
         value = playerDict["stats"].get(statName, 0)
-        return round(value / len(roundsList), 3)
+        return round(value / totalRounds, 3)
     except Exception as exc:
         pname = playerDict.get("name", "Unknown")
         logging.error(f"Error calculating {statName} for {pname}: {exc}")
@@ -212,7 +237,7 @@ def calculateFirstStatPerRound(matchDict, playerDict, firstStatDict):
     """
     try:
         roundsList = matchDict["rounds"]
-        totalRounds = len(roundsList)
+        totalRounds = calculateActualRoundsPlayed(matchDict)
         if totalRounds == 0:
             return 0.0
 

@@ -21,11 +21,12 @@ from statsCalculations import (
     calculateClPercent,
     calculateHsPercentage,
     computeRating,
+    calculateActualRoundsPlayed,
 )
 from sheetsHandler import initSheet, updateSheet
 
 logging.basicConfig(
-    filename="tournamentStats.log",
+    filename="stats/tournamentStats.log",
     level=logging.DEBUG,
     format="%(asctime)s %(levelname)s: %(message)s",
 )
@@ -208,7 +209,7 @@ def processMatch(matchDict, masterList):
         row = [
             matchId,
             mapName,
-            len(matchDict["rounds"]),
+            calculateActualRoundsPlayed(matchDict),
             startedAt,
             f"{p['name']}#{p['tag']}",
             p["agent"]["name"],
