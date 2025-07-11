@@ -2,7 +2,7 @@ import json
 import os
 import logging
 
-matchListFile = "matchList.json"
+matchListFile = "stats/matchList.json"
 
 
 def loadMatchList():

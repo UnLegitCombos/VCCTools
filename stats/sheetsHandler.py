@@ -31,7 +31,7 @@ def initSheet():
     sheet_id = config.get("sheetId", "VCC S10 SB")  # Default value if not found
 
     try:
-        creds = gspread.service_account(filename="credentials.json")
+        creds = gspread.service_account(filename="stats/credentials.json")
         sheet = creds.open(sheet_id).worksheet("Database")
         # Check if headers exist; if not, add them.
         values = sheet.get_all_values()

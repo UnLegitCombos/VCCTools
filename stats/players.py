@@ -2,7 +2,7 @@ import json
 import os
 import logging
 
-masterListFile = "masterList.json"
+masterListFile = "stats/masterList.json"
 
 
 def loadMasterList():
