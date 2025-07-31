@@ -301,8 +301,10 @@ def main():
     apiKey = config.get("apiKey")
 
     # Get batching configuration with defaults
-    apiBatchSize = config.get("apiBatchSize", 3)
-    apiBatchDelay = config.get("apiBatchDelay", 5)
+    apiBatchSizeRaw = config.get("apiBatchSize", 3)
+    apiBatchSize = int(apiBatchSizeRaw) if apiBatchSizeRaw is not None else 3
+    apiBatchDelayRaw = config.get("apiBatchDelay", 5)
+    apiBatchDelay = int(apiBatchDelayRaw) if apiBatchDelayRaw is not None else 5
 
     masterList = loadMasterList()
     matchList = loadMatchList()

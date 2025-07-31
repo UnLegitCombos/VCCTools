@@ -1,6 +1,7 @@
 import requests
 import logging
 import time
+from urllib.parse import quote
 
 
 def fetchCustomMatchHistory(region, playerName, playerTag, apiKey=None):
@@ -10,14 +11,40 @@ def fetchCustomMatchHistory(region, playerName, playerTag, apiKey=None):
     If an error occurs, matches will be an empty list, and errorMessage will be non-empty.
     """
     try:
-        url = f"https://api.henrikdev.xyz/valorant/v4/matches/{region}/pc/{playerName}/{playerTag}"
+        # URL encode player name and tag to handle special characters
+        encoded_name = quote(playerName, safe="")
+        encoded_tag = quote(playerTag, safe="")
+
+        url = f"https://api.henrikdev.xyz/valorant/v4/matches/{region}/pc/{encoded_name}/{encoded_tag}"
         headers = {"Authorization": apiKey} if apiKey else {}
         params = {"mode": "custom", "size": 10}
 
         response = requests.get(url, headers=headers, params=params)
 
+        # Log cache status for debugging
+        cache_status = response.headers.get("x-cache-status", "UNKNOWN")
+        logging.debug(
+            f"API request for {playerName}#{playerTag}: cache status = {cache_status}"
+        )
+
         if response.status_code != 200:
-            errText = f"Error fetching match history: {response.status_code} - {response.text}"
+            if response.status_code == 429:
+                # Rate limited - log headers for debugging
+                rate_limit_headers = {
+                    key: value
+                    for key, value in response.headers.items()
+                    if "rate" in key.lower()
+                    or "limit" in key.lower()
+                    or "retry" in key.lower()
+                }
+                logging.warning(
+                    f"Rate limited (429) for {playerName}#{playerTag}. Rate limit headers: {rate_limit_headers}"
+                )
+                logging.warning(f"Full response headers: {dict(response.headers)}")
+                errText = f"Rate limited (429). Check logs for rate limit details."
+            else:
+                errText = f"Error fetching match history: {response.status_code} - {response.text}"
+
             logging.error(errText)
             return ([], errText)
 
