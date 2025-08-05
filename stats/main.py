@@ -196,7 +196,7 @@ def processMatch(matchDict, masterList):
         clAttempts = cl[2]
         kastFrac = kastFractions.get(p["puuid"], 0)
         kastCount = kastCounts.get(p["puuid"], 0)
-        rating = computeRating(kd, adr, kpr, apr, dpr, fkpr, fdpr, clFrac, kastFrac)
+        rating = computeRating(adr, kpr, apr, dpr, fkpr, fdpr, clFrac, kastFrac)
 
         newPlayer = {
             "puuid": p["puuid"],
