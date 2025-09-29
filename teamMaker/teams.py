@@ -1374,10 +1374,12 @@ def display_excluded_groups(excluded_groups, config, players_data):
     # Convert groups to team-like objects for reusing calculate_statistics
     pseudo_teams = []
     for group in excluded_groups:
-        pseudo_teams.append({
-            "team_score": group["sum_score"],
-            "groups": [group]  # Wrap the group in a list to match team structure
-        })
+        pseudo_teams.append(
+            {
+                "team_score": group["sum_score"],
+                "groups": [group],  # Wrap the group in a list to match team structure
+            }
+        )
 
     # Calculate statistics using the same function as optimization
     min_score, max_score, score_range, std_dev, avg_role_balance = calculate_statistics(
@@ -1395,11 +1397,11 @@ def display_excluded_groups(excluded_groups, config, players_data):
 
     # Display individual group information
     mode = config.get("mode", "basic")
-    
+
     for i, group in enumerate(excluded_groups, start=1):
         # Add returning player indicator to group info
         returning_indicator = " 🔄" if group.get("has_returning_player", False) else ""
-        
+
         print(
             f"\nGroup {group['group_id']} ({group['size']} players) - Total Score: {group['sum_score']:.2f}{returning_indicator}"
         )
@@ -1453,7 +1455,9 @@ def display_excluded_groups(excluded_groups, config, players_data):
         for i in group_indices:
             group = excluded_groups[i]
             diff_from_avg = group_scores[i] - mean_score
-            print(f"  Group {group['group_id']}: {group_scores[i]:.2f} ({diff_from_avg:+.2f} from avg)")
+            print(
+                f"  Group {group['group_id']}: {group_scores[i]:.2f} ({diff_from_avg:+.2f} from avg)"
+            )
 
 
 def get_player_role_display(player_name, players_data):
