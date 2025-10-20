@@ -85,18 +85,35 @@ def calculate_previous_season_score(player_info, config):
 
     distributions = _get_season_distributions(config)
 
-    def convert_percentile_to_score(p):
-        # Logarithmic scoring to compress high percentiles and reduce ceiling effect
-        if p >= 90:
-            # Compress gains above 90th percentile to reduce asymmetry
-            compressed_p = 90 + (p - 90) * 0.5  # Halve gains above 90th percentile
-        else:
-            compressed_p = p
+    def convert_zscore_to_score(rating, distribution):
+        """
+        Use Z-Score method to preserve actual performance differences.
+        This correctly handles cross-season comparisons where formula changes
+        have shifted the overall rating distributions.
+        """
+        if not distribution or len(distribution) < 2:
+            return 15.0
 
-        # Sigmoid-like curve with compressed high end
-        base = 1 + (compressed_p / 100.0) * 29
-        bonus = (compressed_p / 100.0) ** 1.5 * 5  # More moderate exponential bonus
-        return base + bonus
+        # Calculate mean and standard deviation
+        mean = sum(distribution) / len(distribution)
+        variance = sum((x - mean) ** 2 for x in distribution) / len(distribution)
+        std_dev = math.sqrt(variance)
+
+        if std_dev == 0:
+            return 15.0
+
+        # Calculate z-score
+        z_score = (rating - mean) / std_dev
+
+        # Map z-score to score range (1-35 points)
+        # Center around 18, with ~8 point spread per std dev
+        base_score = 18.0
+        score_per_std = 8.0
+
+        score = base_score + (z_score * score_per_std)
+
+        # Clamp to reasonable range
+        return max(1.0, min(35.0, score))
 
     if isinstance(prev_stats, list):
         season_scores = {}
@@ -104,8 +121,9 @@ def calculate_previous_season_score(player_info, config):
             season = str(entry.get("season", "")).upper()
             rating = float(entry.get("adjusted_rating", 0.0))
             if season and rating > 0 and season in distributions:
-                p = _percentile(rating, distributions[season])
-                season_scores[season] = convert_percentile_to_score(p)
+                season_scores[season] = convert_zscore_to_score(
+                    rating, distributions[season]
+                )
         if not season_scores:
             return 0.0
         if len(season_scores) == 1:
@@ -143,8 +161,7 @@ def calculate_previous_season_score(player_info, config):
         rating = float(prev_stats.get("adjusted_rating", 0.0))
         if not season or rating <= 0 or season not in distributions:
             return 0.0
-        p = _percentile(rating, distributions[season])
-        return convert_percentile_to_score(p)
+        return convert_zscore_to_score(rating, distributions[season])
 
 
 def compute_player_score(player_info, config):
@@ -214,12 +231,22 @@ def compute_player_score_detailed(player_info, config):
         if config.get("use_peak_act") and player_info.get("peak_rank_act"):
             peak_act_str = player_info.get("peak_rank_act", "").upper().strip()
 
-            # Only apply peak act bonus for Episode 6 and earlier peaks
+            # Only apply peak act bonus for episodes/acts at or before the configured threshold
             should_apply_bonus = False
+            max_episode = config.get("peak_act_max_episode", 8)
+            max_act = config.get("peak_act_max_act", 1)
+
             if peak_act_str.startswith("E"):
                 try:
-                    episode_num = int(peak_act_str[1:].split("A")[0])
-                    should_apply_bonus = episode_num <= 6
+                    parts = peak_act_str[1:].split("A")
+                    episode_num = int(parts[0])
+                    act_num = int(parts[1]) if len(parts) > 1 else 1
+
+                    # Check if episode/act is at or before the threshold
+                    if episode_num < max_episode or (
+                        episode_num == max_episode and act_num <= max_act
+                    ):
+                        should_apply_bonus = True
                 except (ValueError, IndexError):
                     should_apply_bonus = False
 
@@ -236,19 +263,20 @@ def compute_player_score_detailed(player_info, config):
                 current_score += bonus
                 adv["peak_act"] = {
                     "enabled": True,
-                    "episode_check": f"E{episode_num} <= E6",
+                    "episode_check": f"{peak_act_str} <= E{max_episode}A{max_act}",
                     "acts_ago": acts_ago,
                     "act_weight": act_weight,
                     "peak_act_bonus": bonus,
                 }
             else:
-                reason = "Episode 7+ or Season peak - using consistency factor instead"
+                reason = f"Peak after E{max_episode}A{max_act} threshold - using consistency factor instead"
                 if not peak_act_str.startswith("E"):
                     reason = "Season peak - using consistency factor instead"
                 adv["peak_act"] = {
                     "enabled": False,
                     "reason": reason,
                     "peak_act_string": peak_act_str,
+                    "threshold": f"E{max_episode}A{max_act}",
                 }
         else:
             adv["peak_act"] = {"enabled": False}
@@ -400,7 +428,7 @@ def _export_scores(players_data, config, out_detailed, out_minimal):
     for name, info in players_data.items():
         breakdown = compute_player_score_detailed(info, config)
         detailed[name] = breakdown
-        minimal[name] = round(breakdown["final_score"], 3)
+        minimal[name] = round(breakdown["final_score"], 2)
     detailed = dict(
         sorted(detailed.items(), key=lambda kv: kv[1]["final_score"], reverse=True)
     )
