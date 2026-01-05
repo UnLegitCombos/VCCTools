@@ -3,9 +3,14 @@ import math
 import time
 import os
 import random
+import copy
 from tqdm import tqdm
 from collections import defaultdict
-from rating import compute_player_score, compute_player_score_detailed
+from rating import (
+    compute_player_score,
+    compute_player_score_detailed,
+    apply_top_tier_compression,
+)
 
 """
 Team Formation Optimizer for Valorant
@@ -122,12 +127,16 @@ def load_config():
 # Legacy helpers removed; act weighting & parsing now handled inside rating module
 
 
-def get_role_balance_score(team_roles):
+def get_role_balance_score(team_roles, team_secondary_roles=None):
     """
     Calculate role balance score for a team
 
+    Ideal composition: 1 of each main role (duelist, initiator, controller, sentinel) + 1 repeat
+    Preferred repeats: double duelist > double initiator > flex > controller/sentinel
+
     Args:
-        team_roles: List of role strings for team members
+        team_roles: List of primary role strings for team members
+        team_secondary_roles: Optional list of secondary role strings (or None values)
 
     Returns:
         float: Balance score (higher is more balanced)
@@ -135,31 +144,70 @@ def get_role_balance_score(team_roles):
     if not team_roles or len(team_roles) != 5:
         return 0.0
 
-    # Count roles
+    # Count roles (primary roles get 1.0 weight, secondary roles get 0.5 weight)
     role_counts = {}
     for role in team_roles:
-        role_counts[role] = role_counts.get(role, 0) + 1
+        role_counts[role] = role_counts.get(role, 0) + 1.0
 
-    # Ideal composition: 1 of each main role (duelist, initiator, controller, sentinel)
-    # with one flex or duplicate
+    # Add secondary role contributions (0.5 weight each)
+    if team_secondary_roles:
+        for secondary_role in team_secondary_roles:
+            if secondary_role:  # Skip None values
+                role_counts[secondary_role] = role_counts.get(secondary_role, 0) + 0.5
+
+    # Main roles that should ideally all be present
     main_roles = ["duelist", "initiator", "controller", "sentinel"]
 
-    # Calculate balance score for display
+    # Calculate balance score
     balance_score = 0.0
 
-    # Bonus for having each main role covered
+    # High bonus for having each main role covered (core requirement)
+    # Now considers both primary and secondary roles
     for role in main_roles:
-        if role in role_counts and role_counts[role] >= 1:
+        if role in role_counts and role_counts[role] >= 1.0:
             balance_score += 1.0
+        elif role in role_counts and role_counts[role] >= 0.5:
+            # Partial credit for secondary role coverage only
+            balance_score += 0.5
 
-    # Penalty for having too many of the same role
+    # Additional bonuses/penalties for the 5th player (duplicate/flex)
+    # Apply bonuses even if missing ONE role (e.g., double duelist without initiator is still decent)
+    main_roles_covered = sum(
+        1 for role in main_roles if role in role_counts and role_counts[role] >= 1
+    )
+
+    if main_roles_covered >= 3:
+        # Bonus for having good distribution (3+ different roles)
+        if main_roles_covered == 4:
+            balance_score += 0.5  # Perfect coverage
+
+        # Bonus for preferred duplicate roles
+        if role_counts.get("duelist", 0) == 2:
+            balance_score += 1.0  # Double duelist is highly preferred
+        elif role_counts.get("initiator", 0) == 2:
+            balance_score += 0.8  # Double initiator is also preferred
+        elif role_counts.get("flex", 0) >= 1:
+            balance_score += 0.5  # Flex is good (secondary role)
+        elif (
+            role_counts.get("controller", 0) == 2 or role_counts.get("sentinel", 0) == 2
+        ):
+            balance_score += 0.2  # Double smokes/sentinel is acceptable but not ideal
+
+    # Strong penalty for having 3+ of the same role (except duelist/initiator which get lighter penalty)
     for role, count in role_counts.items():
-        if count > 2:  # More than 2 of the same role is bad
-            balance_score -= (count - 2) * 0.5
+        if count >= 3:
+            if role in ["duelist", "initiator"]:
+                balance_score -= (
+                    count - 2
+                ) * 1.0  # Lighter penalty for duelist/initiator
+            else:
+                balance_score -= (
+                    count - 2
+                ) * 2.0  # Heavy penalty for triple+ controller/sentinel/flex
 
-    # Bonus for balanced distribution
-    if len(role_counts) >= 4:  # At least 4 different roles
-        balance_score += 0.5
+    # Moderate penalty for missing main roles (reduced from 1.5 to 0.8)
+    if main_roles_covered < 4:
+        balance_score -= (4 - main_roles_covered) * 0.8
 
     return max(0.0, balance_score)
 
@@ -176,33 +224,50 @@ def build_groups(players_data, config):
         config: Dict containing weight configuration
 
     Returns:
-        tuple: (list of group objects for optimization, list of excluded groups)
+        tuple: (list of group objects for optimization, list of excluded groups, list of subs)
     """
     group_map = defaultdict(list)
+    subs = []
+
     for player_name, pinfo in players_data.items():
         group_id = pinfo.get("group_id", 0)
-        group_map[group_id].append(player_name)
+        # If group_id is None or null, player is a sub
+        if group_id is None:
+            subs.append(player_name)
+        else:
+            group_map[group_id].append(player_name)
 
     group_list = []
     excluded_groups = []
 
     for g_id, members in group_map.items():
         group_size = len(members)
-        total_score = sum(
-            compute_player_score(players_data[m], config) for m in members
-        )
+        # Use precomputed final score (from rating._export_scores) if available to ensure
+        # exact parity with rating.py; otherwise fall back to compute_player_score.
+        total_score = 0.0
+        for m in members:
+            p = players_data.get(m, {})
+            if "_computed_final_score" in p:
+                total_score += float(p["_computed_final_score"])
+            else:
+                total_score += compute_player_score(p, config)
 
-        # Collect roles for advanced mode (primary role only)
+        # Collect roles for advanced mode (primary AND secondary roles)
         roles = []
+        secondary_roles = []
         if config.get("mode", "basic") == "advanced":
             for m in members:
                 player_role = players_data[m].get("role", "flex")
-                # Handle both single role and list of roles - use primary (first) role only
+                # Handle both single role and list of roles
                 if isinstance(player_role, list):
                     primary_role = player_role[0] if player_role else "flex"
                     roles.append(primary_role)
+                    # Track secondary role if present
+                    secondary_role = player_role[1] if len(player_role) > 1 else None
+                    secondary_roles.append(secondary_role)
                 else:
                     roles.append(player_role)
+                    secondary_roles.append(None)
 
         # Check if any members are returning players
         has_returning_player = any(
@@ -215,6 +280,9 @@ def build_groups(players_data, config):
             "sum_score": total_score,
             "size": group_size,
             "roles": roles,
+            "secondary_roles": (
+                secondary_roles if config.get("mode", "basic") == "advanced" else []
+            ),
             "has_returning_player": has_returning_player,
         }
 
@@ -227,7 +295,7 @@ def build_groups(players_data, config):
                 f"ℹ️  Group {g_id} ({group_size} players) excluded from optimization - scores calculated"
             )
 
-    return group_list, excluded_groups
+    return group_list, excluded_groups, subs
 
 
 def find_valid_subset(groups):
@@ -449,15 +517,22 @@ def export_player_scores(players_data, config, output_file=None):
     # Calculate score for each player with detailed breakdown
     for player_name, player_info in players_data.items():
         score_breakdown = compute_player_score_detailed(player_info, config)
-
         player_scores[player_name] = {
-            "final_score": round(score_breakdown["final_score"], 2),
+            "final_score": score_breakdown["final_score"],
             "current_rank": player_info.get("current_rank", "Unknown"),
             "peak_rank": player_info.get("peak_rank", "Unknown"),
             "tracker_current": player_info.get("tracker_current", 0),
             "tracker_peak": player_info.get("tracker_peak", 0),
             "breakdown": score_breakdown,
         }
+
+    # Apply top-tier compression if enabled
+    if config.get("use_top_tier_compression", False):
+        minimal = {name: data["final_score"] for name, data in player_scores.items()}
+        compressed = apply_top_tier_compression(minimal, config)
+        for name, compressed_score in compressed.items():
+            if name in player_scores:
+                player_scores[name]["final_score"] = round(compressed_score, 2)
 
     # Sort by score (descending)
     sorted_scores = {
@@ -496,13 +571,18 @@ def export_minimal_player_scores(players_data, config, output_file=None):
     # Calculate score for each player (just final score)
     for player_name, player_info in players_data.items():
         final_score = compute_player_score(player_info, config)
-        minimal_scores[player_name] = round(final_score, 2)
+        minimal_scores[player_name] = final_score
 
-    # Sort by score (descending)
+    # Apply top-tier compression if enabled
+    if config.get("use_top_tier_compression", False):
+        minimal_scores = apply_top_tier_compression(minimal_scores, config)
+
+    # Round and sort by score (descending)
+    rounded_scores = {k: round(v, 2) for k, v in minimal_scores.items()}
     sorted_minimal_scores = {
         k: v
         for k, v in sorted(
-            minimal_scores.items(), key=lambda item: item[1], reverse=True
+            rounded_scores.items(), key=lambda item: item[1], reverse=True
         )
     }
 
@@ -549,13 +629,15 @@ def evaluate_teams(teams, config=None):
     ):
         total_role_penalty = 0.0
         for team in teams:
-            # Collect all roles in this team
+            # Collect all primary and secondary roles in this team
             team_roles = []
+            team_secondary_roles = []
             for group in team["groups"]:
                 team_roles.extend(group.get("roles", []))
+                team_secondary_roles.extend(group.get("secondary_roles", []))
 
             # Calculate role balance score (higher is better)
-            balance_score = get_role_balance_score(team_roles)
+            balance_score = get_role_balance_score(team_roles, team_secondary_roles)
             # Convert to penalty (lower is better)
             role_penalty = max(0, 5.0 - balance_score)  # Max penalty of 5
             total_role_penalty += role_penalty
@@ -838,8 +920,6 @@ def create_neighbor_solution(current_solution):
         list: New team assignment after modification
     """
     # Deep copy the current solution to avoid modifying it
-    import copy
-
     neighbor = copy.deepcopy(current_solution)
 
     # Choose the type of neighbor move
@@ -1084,9 +1164,11 @@ def calculate_statistics(teams, config=None):
         total_balance = 0.0
         for team in teams:
             team_roles = []
+            team_secondary_roles = []
             for group in team["groups"]:
                 team_roles.extend(group.get("roles", []))
-            balance_score = get_role_balance_score(team_roles)
+                team_secondary_roles.extend(group.get("secondary_roles", []))
+            balance_score = get_role_balance_score(team_roles, team_secondary_roles)
             total_balance += balance_score
         avg_role_balance = total_balance / len(teams) if teams else 0.0
 
@@ -1142,11 +1224,24 @@ def main():
     detailed_output_file = os.path.join(script_dir, "player_scores.json")
     minimal_output_file = os.path.join(script_dir, "player_scores_minimal.json")
 
-    export_player_scores(players_data, config, detailed_output_file)
-    export_minimal_player_scores(players_data, config, minimal_output_file)
+    # Use rating._export_scores to compute scores (ensures identical logic to rating.py)
+    try:
+        from rating import _export_scores
 
-    # Build groups
-    groups, excluded_groups = build_groups(players_data, config)
+        detailed_scores, minimal_scores = _export_scores(
+            players_data, config, detailed_output_file, minimal_output_file
+        )
+        # Attach compressed minimal scores into players_data for consistent group sums
+        for name, score in minimal_scores.items():
+            if name in players_data:
+                players_data[name]["_computed_final_score"] = score
+    except Exception:
+        # Fallback to existing exporters if _export_scores unavailable
+        export_player_scores(players_data, config, detailed_output_file)
+        export_minimal_player_scores(players_data, config, minimal_output_file)
+
+    # Build groups (build_groups will prefer precomputed '_computed_final_score' when present)
+    groups, excluded_groups, subs = build_groups(players_data, config)
     total_players = sum(g["size"] for g in groups)
     excluded_players = sum(g["size"] for g in excluded_groups)
 
@@ -1229,11 +1324,13 @@ def main():
         print(f"\nTEAM {i}: total score = {team['team_score']:.2f}")
 
         if mode == "advanced" and config.get("use_role_balancing", False):
-            # Show role composition
+            # Show role composition including secondary roles
             team_roles = []
+            team_secondary_roles = []
             for group in team["groups"]:
                 team_roles.extend(group.get("roles", []))
-            role_balance = get_role_balance_score(team_roles)
+                team_secondary_roles.extend(group.get("secondary_roles", []))
+            role_balance = get_role_balance_score(team_roles, team_secondary_roles)
             role_counts = {}
             for role in team_roles:
                 role_counts[role] = role_counts.get(role, 0) + 1
@@ -1355,6 +1452,40 @@ def main():
         )
     print("=" * 60)
 
+    # Display subs (players with null group_id)
+    if subs:
+        print("\n" + "=" * 60)
+        print("📋 AVAILABLE SUBS (Players with null group_id)")
+        print("=" * 60)
+        print(f"Total subs available: {len(subs)}\n")
+
+        # Sort subs by score (descending)
+        subs_with_scores = []
+        for sub_name in subs:
+            sub_info = players_data[sub_name]
+            sub_score = compute_player_score(sub_info, config)
+            subs_with_scores.append((sub_name, sub_score, sub_info))
+
+        subs_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+        # Display each sub with their info
+        for sub_name, sub_score, sub_info in subs_with_scores:
+            current_rank = sub_info.get("current_rank", "N/A")
+            peak_rank = sub_info.get("peak_rank", "N/A")
+            role = sub_info.get("role", ["flex"])
+            if isinstance(role, list):
+                role_str = "/".join(role)
+            else:
+                role_str = role
+            region = sub_info.get("region", "EU")
+            returning = " 🔄" if sub_info.get("is_returning_player", False) else ""
+
+            print(
+                f"  {sub_name:<20} | Score: {sub_score:>6.2f} | {current_rank:<15} -> {peak_rank:<15} | Role: {role_str:<20} | {region}{returning}"
+            )
+
+        print("=" * 60)
+
 
 def display_excluded_groups(excluded_groups, config, players_data):
     """
@@ -1409,8 +1540,9 @@ def display_excluded_groups(excluded_groups, config, players_data):
         # Show role composition for advanced mode
         if mode == "advanced" and config.get("use_role_balancing", False):
             team_roles = group.get("roles", [])
+            team_secondary_roles = group.get("secondary_roles", [])
             if team_roles and len(team_roles) == 5:  # Only show for complete teams
-                role_balance = get_role_balance_score(team_roles)
+                role_balance = get_role_balance_score(team_roles, team_secondary_roles)
                 role_counts = {}
                 for role in team_roles:
                     role_counts[role] = role_counts.get(role, 0) + 1
