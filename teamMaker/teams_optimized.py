@@ -57,89 +57,70 @@ def get_cached_role_balance(team_roles, team_secondary_roles=None):
 
 def load_config():
     """
-    Load configuration from config.json file
+    Load configuration from config.json (for ratings) and config_tighter_teams.json (for optimization params)
+
+    This allows using the correct rank values and scoring weights from config.json
+    while using optimized parameters from config_tighter_teams.json for better team balance.
 
     Returns:
-        dict: Configuration settings
+        dict: Configuration settings with correct ratings and optimized parameters
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(script_dir, "config.json")
+
+    # Load base config with correct ratings from config.json
+    base_config_path = os.path.join(script_dir, "config.json")
+    config = {}
 
     try:
-        with open(config_path, "r") as f:
+        with open(base_config_path, "r") as f:
             config = json.load(f)
-
-            # Set random seed if provided in config
-            if "random_seed" in config:
-                random.seed(config["random_seed"])
-                print(f"Using random seed: {config['random_seed']}")
-
-            return config
+        print("✅ Loaded base config from config.json (correct ratings)")
     except FileNotFoundError:
-        print("Config file not found. Using default configuration.")
-        return {
-            "players_file": "playersexample.json",
-            "mode": "basic",  # "basic" or "advanced"
-            # Basic mode settings (existing functionality)
-            "use_tracker": True,
-            "weight_current": 0.8,
-            "weight_peak": 0.2,
-            "weight_current_tracker": 0.4,
-            "weight_peak_tracker": 0.2,
-            # Advanced mode settings
-            "use_peak_act": True,
-            "weight_peak_act": 0.15,
-            "peak_act_decay_rate": 0.9,  # Exponential decay per act
-            "use_role_balancing": True,
-            "role_balance_weight": 2.0,  # Penalty for unbalanced role compositions
-            "use_region_debuff": True,
-            "non_eu_debuff": 0.95,  # Multiplier for non-EU players
-            "use_returning_player_stats": False,  # For previous season percentile scoring
-            "returning_player_ranked_weight": 0.7,  # Weight for ranked stats for returning players (vs previous season)
-            "previous_season_max_score": 10.0,  # Deprecated - kept for backwards compatibility
-            "rank_values": {
-                "Iron 1": 1,
-                "Iron 2": 2,
-                "Iron 3": 3,
-                "Bronze 1": 4,
-                "Bronze 2": 5,
-                "Bronze 3": 6,
-                "Silver 1": 7,
-                "Silver 2": 8,
-                "Silver 3": 9,
-                "Gold 1": 10,
-                "Gold 2": 11,
-                "Gold 3": 12,
-                "Platinum 1": 13,
-                "Platinum 2": 14,
-                "Platinum 3": 15,
-                "Diamond 1": 16,
-                "Diamond 2": 17,
-                "Diamond 3": 18,
-                "Ascendant 1": 19,
-                "Ascendant 2": 20,
-                "Ascendant 3": 21,
-                "Immortal 1": 22,
-                "Immortal 2": 23,
-                "Immortal 3": 24,
-                "Radiant": 28,
-            },
-            # Role values for advanced mode
-            "role_values": {
-                "duelist": 1,
-                "initiator": 1,
-                "controller": 1,
-                "sentinel": 1,
-                "flex": 0.8,  # Slightly lower value for flexibility
-            },
-            "max_time": 1200,
-            "early_termination_threshold": 0.5,
-            "annealing_iterations": 500000,
-            "initial_temperature": 200.0,
-            "cooling_rate": 0.997,
-            "max_no_improvement": 100000,
-            "random_seed": None,
-        }
+        print("Warning: config.json not found. Using defaults for ratings.")
+
+    # Load optimization parameters from config_tighter_teams.json
+    tighter_config_path = os.path.join(script_dir, "config_tighter_teams.json")
+    try:
+        with open(tighter_config_path, "r") as f:
+            tighter_config = json.load(f)
+
+        # Override ONLY optimization and compression parameters, keep core rating params from config.json
+        # This ensures we use the correct rank values, weights, etc. from config.json
+        optimization_params = [
+            "early_termination_threshold",
+            "annealing_iterations",
+            "initial_temperature",
+            "cooling_rate",
+            "max_no_improvement",
+            "max_time",
+            "use_adaptive_cooling",
+            "use_tabu_search",
+            "tabu_tenure",
+            "max_restarts",
+            "restart_threshold",
+            # Top-tier compression settings
+            "use_top_tier_compression",
+            "top_tier_gap_compression",
+            "top_tier_score_reduction",
+            "compression_full_strength_ranks",
+            "compression_taper_ranks",
+        ]
+
+        for param in optimization_params:
+            if param in tighter_config:
+                config[param] = tighter_config[param]
+
+        print("✅ Loaded optimization parameters from config_tighter_teams.json")
+
+    except FileNotFoundError:
+        print("Info: config_tighter_teams.json not found. Using base config values.")
+
+    # Set random seed if provided
+    if "random_seed" in config:
+        random.seed(config["random_seed"])
+        print(f"Using random seed: {config['random_seed']}")
+
+    return config
 
 
 def get_role_balance_score(team_roles, team_secondary_roles=None):

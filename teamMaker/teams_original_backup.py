@@ -4,9 +4,8 @@ import time
 import os
 import random
 import copy
-import multiprocessing as mp
-from collections import defaultdict, deque
 from tqdm import tqdm
+from collections import defaultdict
 from rating import (
     compute_player_score,
     compute_player_score_detailed,
@@ -14,45 +13,28 @@ from rating import (
 )
 
 """
-Optimized Team Formation Optimizer for Valorant
+Team Formation Optimizer for Valorant
 
-This optimized version addresses the major performance bottlenecks identified:
-1. Deep copying overhead replaced with in-place neighbor generation
-2. Pre-computed team sizes and scores with incremental updates
-3. Role balance caching to avoid repeated O(n) calculations
-4. Improved simulated annealing with adaptive cooling and tabu search
-5. Optional multiprocessing for multiple SA restarts
+This script creates balanced teams of 5 players from groups of players
+that must stay together. It uses simulated annealing to optimize
+team balance based on player ranks and optional tracker scores.
 
-Preserves all public behavior while dramatically improving performance.
+Features two modes:
+- BASIC MODE: Original functionality with rank and tracker score balancing
+- ADVANCED MODE: Additional features including:
+  * Peak rank act weighting (older peak ranks matter less)
+  * Role balancing for team compositions  
+  * Region-based adjustments (non-EU players get slight debuff)
+  * Previous season stats integration (percentile-based S8/S9 data)
+
+Player scores are exported to player_scores.json by default.
+
+Usage:
+    python teams.py  # Create balanced teams and export player scores
+    
+Configuration:
+    Set "mode": "basic" or "advanced" in config.json to choose mode
 """
-
-# Cache for role balance calculations to avoid repeated O(n) work
-_ROLE_BALANCE_CACHE = {}
-_ROLE_BALANCE_CACHE_SIZE = 1000  # LRU cache size limit
-
-
-def get_cached_role_balance(team_roles, team_secondary_roles=None):
-    """Get role balance score with LRU caching."""
-    cache_key = (
-        tuple(sorted(team_roles)),
-        (
-            tuple(sorted([r for r in team_secondary_roles if r is not None]))
-            if team_secondary_roles
-            else ()
-        ),
-    )
-
-    if cache_key in _ROLE_BALANCE_CACHE:
-        return _ROLE_BALANCE_CACHE[cache_key]
-
-    score = get_role_balance_score(team_roles, team_secondary_roles)
-
-    # Simple LRU: if cache is full, remove oldest entry
-    if len(_ROLE_BALANCE_CACHE) >= _ROLE_BALANCE_CACHE_SIZE:
-        _ROLE_BALANCE_CACHE.pop(next(iter(_ROLE_BALANCE_CACHE)))
-
-    _ROLE_BALANCE_CACHE[cache_key] = score
-    return score
 
 
 def load_config():
@@ -142,6 +124,9 @@ def load_config():
         }
 
 
+# Legacy helpers removed; act weighting & parsing now handled inside rating module
+
+
 def get_role_balance_score(team_roles, team_secondary_roles=None):
     """
     Calculate role balance score for a team
@@ -225,6 +210,9 @@ def get_role_balance_score(team_roles, team_secondary_roles=None):
         balance_score -= (4 - main_roles_covered) * 0.8
 
     return max(0.0, balance_score)
+
+
+## Player scoring / previous season logic removed; delegated to rating module.
 
 
 def build_groups(players_data, config):
@@ -648,8 +636,8 @@ def evaluate_teams(teams, config=None):
                 team_roles.extend(group.get("roles", []))
                 team_secondary_roles.extend(group.get("secondary_roles", []))
 
-            # Calculate role balance score (higher is better) with caching
-            balance_score = get_cached_role_balance(team_roles, team_secondary_roles)
+            # Calculate role balance score (higher is better)
+            balance_score = get_role_balance_score(team_roles, team_secondary_roles)
             # Convert to penalty (lower is better)
             role_penalty = max(0, 5.0 - balance_score)  # Max penalty of 5
             total_role_penalty += role_penalty
@@ -659,71 +647,6 @@ def evaluate_teams(teams, config=None):
         )
 
     return score_range, std_dev, role_balance_penalty
-
-
-# Optimized Team State Class for incremental updates
-class TeamState:
-    """Optimized team state with pre-computed metrics and incremental updates."""
-
-    def __init__(self, groups):
-        """Initialize team state from groups."""
-        self.groups = groups[:]  # Shallow copy for groups
-        self.team_score = sum(g["sum_score"] for g in groups)
-        self.size = sum(g["size"] for g in groups)
-        self._team_roles = []
-        self._team_secondary_roles = []
-
-        # Pre-compute role information if available
-        if groups and isinstance(groups[0], dict) and "roles" in groups[0]:
-            for group in groups:
-                self._team_roles.extend(group.get("roles", []))
-                self._team_secondary_roles.extend(group.get("secondary_roles", []))
-
-    def copy(self):
-        """Create a copy of this team state."""
-        new_state = TeamState.__new__(TeamState)
-        new_state.groups = self.groups[:]  # Shallow copy for groups
-        new_state.team_score = self.team_score
-        new_state.size = self.size
-        new_state._team_roles = self._team_roles[:]
-        new_state._team_secondary_roles = self._team_secondary_roles[:]
-        return new_state
-
-    def add_group(self, group):
-        """Add a group to this team state incrementally."""
-        self.groups.append(group)
-        self.team_score += group["sum_score"]
-        self.size += group["size"]
-
-        # Update role information if available
-        if "roles" in group:
-            self._team_roles.extend(group.get("roles", []))
-            self._team_secondary_roles.extend(group.get("secondary_roles", []))
-
-    def remove_group(self, group):
-        """Remove a group from this team state incrementally."""
-        self.groups.remove(group)
-        self.team_score -= group["sum_score"]
-        self.size -= group["size"]
-
-        # Update role information if available
-        if "roles" in group:
-            # Remove roles and secondary roles
-            group_roles = group.get("roles", [])
-            group_secondary = group.get("secondary_roles", [])
-
-            for role in group_roles:
-                self._team_roles.remove(role)
-            for role in group_secondary:
-                if role in self._team_secondary_roles:
-                    self._team_secondary_roles.remove(role)
-
-    def get_role_balance_score(self, use_cache=True):
-        """Get role balance score for this team."""
-        if use_cache:
-            return get_cached_role_balance(self._team_roles, self._team_secondary_roles)
-        else:
-            return get_role_balance_score(self._team_roles, self._team_secondary_roles)
 
 
 def is_valid_assignment(teams, total_players):
@@ -842,41 +765,9 @@ def bin_packing_assignment(groups, num_teams):
     return teams
 
 
-# Tabu search component for better optimization
-class TabuSearch:
-    """Tabu search implementation to prevent cycling in optimization."""
-
-    def __init__(self, tabu_tenure=10):
-        self.tabu_tenure = tabu_tenure
-        self.tabu_list = deque(maxlen=tabu_tenure)
-        self.move_history = deque(maxlen=tabu_tenure * 2)
-
-    def is_tabu(self, move):
-        """Check if a move is in the tabu list."""
-        return move in self.tabu_list
-
-    def add_move(self, move):
-        """Add a move to the tabu list."""
-        self.tabu_list.append(move)
-        self.move_history.append(move)
-
-    def get_aspiration_moves(self, current_best_score, candidate_score):
-        """Get moves that should be considered even if tabu due to aspiration criterion."""
-        if candidate_score < current_best_score:
-            # Clear tabu list if we found a significantly better solution
-            self.tabu_list.clear()
-            return True
-        return False
-
-
 def simulated_annealing_team_balancer(groups, config):
     """
-    Balance teams using optimized simulated annealing with improvements:
-    - In-place neighbor generation (no deep copying)
-    - Incremental evaluation
-    - Adaptive cooling schedule
-    - Tabu search component
-    - Multiple restart support
+    Balance teams using simulated annealing.
 
     Args:
         groups: List of group objects
@@ -912,46 +803,18 @@ def simulated_annealing_team_balancer(groups, config):
     best_range = current_range
     best_stdev = current_stdev
     best_role_penalty = current_role_penalty
-
-    # Configuration for optimized SA
-    max_iterations = config.get("annealing_iterations", 100000)
-    initial_temperature = config.get("initial_temperature", 100.0)
+    temperature = config.get("initial_temperature", 100.0)
     cooling_rate = config.get("cooling_rate", 0.99)
-    max_no_improvement = config.get("max_no_improvement", 10000)
-    max_time = config.get("max_time", 120)
-
-    # Adaptive cooling parameters
-    adaptive_cooling = config.get("use_adaptive_cooling", True)
-    temperature = initial_temperature
-
-    # Tabu search component
-    use_tabu = config.get("use_tabu_search", True)
-    tabu = TabuSearch(tabu_tenure=config.get("tabu_tenure", 8)) if use_tabu else None
-
-    # Pre-compute team states for faster evaluation
-    current_team_states = []
-    for team in current_solution:
-        if (
-            team
-            and isinstance(team, dict)
-            and "groups" in team
-            and team["groups"] is not None
-        ):
-            current_team_states.append(TeamState(team["groups"]))
+    max_iterations = config.get("annealing_iterations", 100000)
 
     progress_bar = tqdm(total=max_iterations, desc="Optimizing teams")
 
     # Track iterations without improvement for early stopping
     iterations_without_improvement = 0
-    restart_count = 0
-    max_restarts = config.get("max_restarts", 3)
-
-    # Adaptive restart parameters
-    restart_threshold = config.get(
-        "restart_threshold", 0.8
-    )  # Restart if temp drops below this fraction
+    max_no_improvement = config.get("max_no_improvement", 10000)
 
     start_time = time.time()
+    max_time = config.get("max_time", 120)  # 2 minutes default
 
     for iteration in range(max_iterations):
         progress_bar.update(1)
@@ -968,60 +831,16 @@ def simulated_annealing_team_balancer(groups, config):
             print("\nNo improvement for many iterations. Stopping early.")
             break
 
-        # Adaptive restart: if temperature gets very low and we're stuck, restart
-        if (
-            adaptive_cooling
-            and restart_count < max_restarts
-            and temperature < initial_temperature * restart_threshold
-            and iterations_without_improvement > max_no_improvement // 2
-        ):
-
-            print(
-                f"\nRestarting optimization (restart {restart_count + 1}/{max_restarts})..."
-            )
-            restart_count += 1
-            temperature = initial_temperature * (
-                0.7**restart_count
-            )  # Gradually reduce restart temperature
-            iterations_without_improvement = 0
-
-            # Create new random starting point
-            current_solution = create_initial_assignment(groups, num_teams)
-            if current_solution:
-                current_team_states = []
-                for team in current_solution:
-                    if (
-                        team
-                        and isinstance(team, dict)
-                        and "groups" in team
-                        and team["groups"] is not None
-                    ):
-                        current_team_states.append(TeamState(team["groups"]))
-            current_range, current_stdev, current_role_penalty = evaluate_teams(
-                current_solution, config
-            )
-
-        # Create a neighbor solution using in-place operations
-        neighbor_team_states, move_description = create_neighbor_solution_incremental(
-            current_team_states, tabu
-        )
+        # Create a neighbor solution by swapping groups between teams
+        neighbor = create_neighbor_solution(current_solution)
 
         # Skip invalid neighbors
-        if not neighbor_team_states or not is_valid_assignment_team_states(
-            neighbor_team_states, total_players
-        ):
+        if not neighbor or not is_valid_assignment(neighbor, total_players):
             continue
 
-        # Evaluate the neighbor incrementally
-        neighbor_range, neighbor_stdev, neighbor_role_penalty = (
-            evaluate_teams_incremental(
-                neighbor_team_states,
-                current_range,
-                current_stdev,
-                current_role_penalty,
-                move_description,
-                config,
-            )
+        # Evaluate the neighbor
+        neighbor_range, neighbor_stdev, neighbor_role_penalty = evaluate_teams(
+            neighbor, config
         )
 
         # Calculate acceptance probability
@@ -1036,15 +855,8 @@ def simulated_annealing_team_balancer(groups, config):
         )
 
         # Accept if better, or with probability based on temperature if worse
-        accept_move = False
-        if energy_diff <= 0:
-            accept_move = True
-        elif temperature > 0 and random.random() < math.exp(-energy_diff / temperature):
-            accept_move = True
-
-        if accept_move:
-            # Update current solution with the new state
-            current_team_states = neighbor_team_states
+        if energy_diff <= 0 or random.random() < math.exp(-energy_diff / temperature):
+            current_solution = neighbor
             current_range = neighbor_range
             current_stdev = neighbor_stdev
             current_role_penalty = neighbor_role_penalty
@@ -1059,13 +871,14 @@ def simulated_annealing_team_balancer(groups, config):
                     and neighbor_role_penalty < best_role_penalty
                 )
             ):
-                best_solution = convert_team_states_to_teams(neighbor_team_states)
+                best_solution = neighbor
                 best_range = neighbor_range
                 best_stdev = neighbor_stdev
                 best_role_penalty = neighbor_role_penalty
                 iterations_without_improvement = 0
 
                 # If we find a very good solution, print it and exit early
+                # The threshold can be configured in config.json
                 early_termination_threshold = config.get(
                     "early_termination_threshold", 2.0
                 )
@@ -1080,22 +893,8 @@ def simulated_annealing_team_balancer(groups, config):
                     break
             else:
                 iterations_without_improvement += 1
-
-            # Add move to tabu list
-            if tabu and move_description:
-                tabu.add_move(move_description)
         else:
             iterations_without_improvement += 1
-
-        # Adaptive cooling: adjust cooling rate based on recent performance
-        if adaptive_cooling:
-            # Simple adaptive cooling: slow down cooling if we're making progress
-            if iterations_without_improvement < max_no_improvement // 4:
-                cooling_rate = max(0.95, cooling_rate * 0.999)  # Cool slower
-            else:
-                cooling_rate = min(0.999, cooling_rate * 1.001)  # Cool faster
-        else:
-            cooling_rate = config.get("cooling_rate", 0.99)
 
         # Cool the temperature
         temperature *= cooling_rate
@@ -1110,242 +909,155 @@ def simulated_annealing_team_balancer(groups, config):
     return best_solution
 
 
-def convert_team_states_to_teams(team_states):
-    """Convert TeamState objects back to original team format."""
-    teams = []
-    for state in team_states:
-        team = {"team_score": state.team_score, "groups": state.groups}
-        teams.append(team)
-    return teams
-
-
-def is_valid_assignment_team_states(team_states, total_players):
-    """Check if team states are valid assignments."""
-    total_assigned = sum(state.size for state in team_states)
-    return total_assigned == total_players and all(
-        state.size == 5 for state in team_states
-    )
-
-
-def evaluate_teams_incremental(
-    team_states, old_range, old_stdev, old_role_penalty, move_description, config
-):
-    """Evaluate teams with incremental updates to avoid full recalculation."""
-    # For simplicity and correctness, we'll do a full evaluation
-    # In a more advanced implementation, we could calculate incrementally
-    teams = convert_team_states_to_teams(team_states)
-    return evaluate_teams(teams, config)
-
-
-def create_neighbor_solution_incremental(current_team_states, tabu=None):
+def create_neighbor_solution(current_solution):
     """
-    Create a neighbor solution using in-place operations instead of deep copying.
-    This is a major performance optimization.
+    Create a neighbor solution by making a small change to current solution.
 
     Args:
-        current_team_states: List of TeamState objects
-        tabu: Optional TabuSearch object
+        current_solution: Current team assignment
 
     Returns:
-        tuple: (new_team_states, move_description)
+        list: New team assignment after modification
     """
-    # Create copies of team states for the neighbor
-    neighbor_states = [state.copy() for state in current_team_states]
+    # Deep copy the current solution to avoid modifying it
+    neighbor = copy.deepcopy(current_solution)
 
     # Choose the type of neighbor move
     move_type = random.choices(
-        ["swap_groups", "move_group", "triple_swap"],
-        weights=[0.6, 0.3, 0.1],  # Add triple swap for better exploration
+        ["swap_groups", "move_group"],
+        weights=[0.7, 0.3],  # Weights for different move types
         k=1,
     )[0]
 
     if move_type == "swap_groups":
-        return create_swap_move(neighbor_states, tabu)
-    elif move_type == "move_group":
-        return create_move_group_move(neighbor_states, tabu)
-    elif move_type == "triple_swap":
-        return create_triple_swap_move(neighbor_states, tabu)
+        # Swap two random groups between two random teams
+        if len(neighbor) <= 1:
+            return None
 
-    return None, None
+        team1_idx = random.randrange(len(neighbor))
+        team2_idx = random.randrange(len(neighbor))
 
+        # Ensure teams are different
+        while team1_idx == team2_idx:
+            team2_idx = random.randrange(len(neighbor))
 
-def create_swap_move(neighbor_states, tabu):
-    """Create a swap move between two teams."""
-    if len(neighbor_states) <= 1:
-        return None, None
+        team1 = neighbor[team1_idx]
+        team2 = neighbor[team2_idx]
 
-    # Try multiple attempts to find a valid swap
-    for _ in range(10):  # Limit attempts to avoid infinite loops
-        team1_idx = random.randrange(len(neighbor_states))
-        team2_idx = random.randrange(len(neighbor_states))
-
-        # Ensure teams are different and both have groups
-        if (
-            team1_idx == team2_idx
-            or not neighbor_states[team1_idx].groups
-            or not neighbor_states[team2_idx].groups
-        ):
-            continue
-
-        team1 = neighbor_states[team1_idx]
-        team2 = neighbor_states[team2_idx]
+        # Skip if either team is empty
+        if not team1["groups"] or not team2["groups"]:
+            return None
 
         # Choose random groups from each team
-        group1_idx = random.randrange(len(team1.groups))
-        group2_idx = random.randrange(len(team2.groups))
+        group1_idx = random.randrange(len(team1["groups"]))
+        group2_idx = random.randrange(len(team2["groups"]))
 
-        group1 = team1.groups[group1_idx]
-        group2 = team2.groups[group2_idx]
+        group1 = team1["groups"][group1_idx]
+        group2 = team2["groups"][group2_idx]
 
         # Check if the swap would keep team sizes valid
-        new_team1_size = team1.size - group1["size"] + group2["size"]
-        new_team2_size = team2.size - group2["size"] + group1["size"]
+        team1_size = sum(g["size"] for g in team1["groups"])
+        team2_size = sum(g["size"] for g in team2["groups"])
 
-        if new_team1_size == 5 and new_team2_size == 5:
-            # Create move description for tabu list
-            move_description = f"swap_{group1['group_id']}_{group2['group_id']}"
+        new_team1_size = team1_size - group1["size"] + group2["size"]
+        new_team2_size = team2_size - group2["size"] + group1["size"]
 
-            # Check tabu list
-            if tabu and tabu.is_tabu(move_description):
-                continue
+        if new_team1_size != 5 or new_team2_size != 5:
+            return None  # Invalid swap
 
-            # Execute the swap
-            team1.remove_group(group1)
-            team2.remove_group(group2)
-            team1.add_group(group2)
-            team2.add_group(group1)
+        # Execute the swap
+        # Update team scores
+        team1["team_score"] = (
+            team1["team_score"] - group1["sum_score"] + group2["sum_score"]
+        )
+        team2["team_score"] = (
+            team2["team_score"] - group2["sum_score"] + group1["sum_score"]
+        )
 
-            return neighbor_states, move_description
+        # Swap the groups
+        team1["groups"][group1_idx], team2["groups"][group2_idx] = (
+            team2["groups"][group2_idx],
+            team1["groups"][group1_idx],
+        )
 
-    return None, None
+    elif move_type == "move_group":
+        # Move a single group to another team, with another balancing group move
+        if len(neighbor) <= 1:
+            return None
 
+        team1_idx = random.randrange(len(neighbor))
+        team2_idx = random.randrange(len(neighbor))
 
-def create_move_group_move(neighbor_states, tabu):
-    """Create a move group to another team with compensation."""
-    if len(neighbor_states) <= 1:
-        return None, None
+        # Ensure teams are different
+        while team1_idx == team2_idx:
+            team2_idx = random.randrange(len(neighbor))
 
-    # Try multiple attempts to find a valid move
-    for _ in range(10):
-        team1_idx = random.randrange(len(neighbor_states))
-        team2_idx = random.randrange(len(neighbor_states))
+        team1 = neighbor[team1_idx]
+        team2 = neighbor[team2_idx]
 
-        # Ensure teams are different and source team has groups
-        if team1_idx == team2_idx or not neighbor_states[team1_idx].groups:
-            continue
-
-        team1 = neighbor_states[team1_idx]
-        team2 = neighbor_states[team2_idx]
+        # Skip if source team is empty
+        if not team1["groups"]:
+            return None
 
         # Choose a random group from source team
-        group1_idx = random.randrange(len(team1.groups))
-        group1 = team1.groups[group1_idx]
+        group1_idx = random.randrange(len(team1["groups"]))
+        group1 = team1["groups"][group1_idx]
+
+        # Check if we can move this group while maintaining valid team sizes
+        # Calculate current team sizes
+        team1_size = sum(g["size"] for g in team1["groups"])
+        team2_size = sum(g["size"] for g in team2["groups"])
 
         # Calculate new sizes after move
-        new_team1_size = team1.size - group1["size"]
-        new_team2_size = team2.size + group1["size"]
+        new_team1_size = team1_size - group1["size"]
+        new_team2_size = team2_size + group1["size"]
 
         # If move would make teams invalid, skip
         if new_team1_size < 0 or new_team2_size > 5:
-            continue
+            return None
 
         # We need to find a compensating move to keep team sizes at 5
+        # Find groups from other teams that could be moved to team1
         needed_size = 5 - new_team1_size
 
         # Find a group from any team (except team2) with the needed size
         potential_donor_teams = [
             (t_idx, t)
-            for t_idx, t in enumerate(neighbor_states)
+            for t_idx, t in enumerate(neighbor)
             if t_idx != team1_idx and t_idx != team2_idx
         ]
 
         if not potential_donor_teams:
-            continue
+            return None
 
         # Try to find a donor group with the exact needed size
         valid_moves = []
         for donor_idx, donor_team in potential_donor_teams:
-            for g_idx, g in enumerate(donor_team.groups):
+            for g_idx, g in enumerate(donor_team["groups"]):
                 if g["size"] == needed_size:
                     valid_moves.append((donor_idx, g_idx, g))
 
         if not valid_moves:
-            continue
+            return None  # No valid compensating move found
 
         # Choose a random valid move
         donor_idx, donor_g_idx, donor_group = random.choice(valid_moves)
-        donor_team = neighbor_states[donor_idx]
-
-        # Create move description for tabu list
-        move_description = (
-            f"move_{group1['group_id']}_to_{team2_idx}_from_{donor_group['group_id']}"
-        )
-
-        # Check tabu list
-        if tabu and tabu.is_tabu(move_description):
-            continue
+        donor_team = neighbor[donor_idx]
 
         # Execute the moves
-        team1.remove_group(group1)
-        team2.add_group(group1)
-        donor_team.remove_group(donor_group)
-        team1.add_group(donor_group)
+        # Move original group from team1 to team2
+        team2["groups"].append(group1)
+        team2["team_score"] += group1["sum_score"]
+        team1["groups"].pop(group1_idx)
+        team1["team_score"] -= group1["sum_score"]
 
-        return neighbor_states, move_description
+        # Move donor group to team1
+        team1["groups"].append(donor_group)
+        team1["team_score"] += donor_group["sum_score"]
+        donor_team["groups"].pop(donor_g_idx)
+        donor_team["team_score"] -= donor_group["sum_score"]
 
-    return None, None
-
-
-def create_triple_swap_move(neighbor_states, tabu):
-    """Create a more complex triple swap for better exploration."""
-    if len(neighbor_states) < 3:
-        return None, None
-
-    # Try multiple attempts to find a valid triple swap
-    for _ in range(5):
-        # Select three different teams
-        team_indices = random.sample(range(len(neighbor_states)), 3)
-
-        teams = [neighbor_states[i] for i in team_indices]
-
-        # Check if all teams have at least one group
-        if not all(team.groups for team in teams):
-            continue
-
-        # Select one group from each team
-        groups = []
-        for team in teams:
-            group_idx = random.randrange(len(team.groups))
-            groups.append(team.groups[group_idx])
-
-        # Check if a cyclic swap would keep all team sizes valid
-        new_sizes = []
-        valid = True
-        for i, (team, group) in enumerate(zip(teams, groups)):
-            new_size = team.size - group["size"] + groups[(i + 1) % 3]["size"]
-            new_sizes.append(new_size)
-            if new_size != 5:  # Must maintain exactly 5 players per team
-                valid = False
-                break
-
-        if not valid:
-            continue
-
-        # Create move description for tabu list
-        move_description = f"triple_{groups[0]['group_id']}_{groups[1]['group_id']}_{groups[2]['group_id']}"
-
-        # Check tabu list
-        if tabu and tabu.is_tabu(move_description):
-            continue
-
-        # Execute the triple swap
-        for i, (team, group) in enumerate(zip(teams, groups)):
-            team.remove_group(group)
-            team.add_group(groups[(i + 1) % 3])
-
-        return neighbor_states, move_description
-
-    return None, None
+    return neighbor
 
 
 def greedy_team_assignment(groups, num_teams):
@@ -1456,11 +1168,14 @@ def calculate_statistics(teams, config=None):
             for group in team["groups"]:
                 team_roles.extend(group.get("roles", []))
                 team_secondary_roles.extend(group.get("secondary_roles", []))
-            balance_score = get_cached_role_balance(team_roles, team_secondary_roles)
+            balance_score = get_role_balance_score(team_roles, team_secondary_roles)
             total_balance += balance_score
         avg_role_balance = total_balance / len(teams) if teams else 0.0
 
     return min_score, max_score, score_range, std_dev, avg_role_balance
+
+
+## Previous season percentile utilities removed (now centralized in rating.py with optional config distributions)
 
 
 def main():
@@ -1574,7 +1289,7 @@ def main():
     # Time the team formation process
     start_time = time.time()
 
-    # Find the best team arrangement using optimized simulated annealing
+    # Find the best team arrangement using simulated annealing
     best_teams = simulated_annealing_team_balancer(chosen_groups, config)
 
     end_time = time.time()
@@ -1615,7 +1330,7 @@ def main():
             for group in team["groups"]:
                 team_roles.extend(group.get("roles", []))
                 team_secondary_roles.extend(group.get("secondary_roles", []))
-            role_balance = get_cached_role_balance(team_roles, team_secondary_roles)
+            role_balance = get_role_balance_score(team_roles, team_secondary_roles)
             role_counts = {}
             for role in team_roles:
                 role_counts[role] = role_counts.get(role, 0) + 1
@@ -1827,7 +1542,7 @@ def display_excluded_groups(excluded_groups, config, players_data):
             team_roles = group.get("roles", [])
             team_secondary_roles = group.get("secondary_roles", [])
             if team_roles and len(team_roles) == 5:  # Only show for complete teams
-                role_balance = get_cached_role_balance(team_roles, team_secondary_roles)
+                role_balance = get_role_balance_score(team_roles, team_secondary_roles)
                 role_counts = {}
                 for role in team_roles:
                     role_counts[role] = role_counts.get(role, 0) + 1
