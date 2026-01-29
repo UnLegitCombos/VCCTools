@@ -64,8 +64,8 @@ def fetchCustomMatchHistory(region, playerName, playerTag, apiKey=None):
             if modeType == "Standard" and players == 10:
                 filtered.append(match)
 
-            if not filtered:
-                return [], "No matches found that meet 'Standard mode' + 10 players"
+        if not filtered:
+            return [], "No matches found that meet 'Standard mode' + 10 players"
 
         return filtered, None  # No error
 

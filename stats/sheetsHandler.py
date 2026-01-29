@@ -31,8 +31,13 @@ def initSheet():
     sheet_id = config.get("sheetId", "VCC S10 SB")  # Default value if not found
 
     try:
-        creds = gspread.service_account(filename="stats/credentials.json")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        credentials_path = os.path.join(script_dir, "credentials.json")
+        logging.info(f"Using credentials file: {credentials_path}")
+        creds = gspread.service_account(filename=credentials_path)
+        logging.info(f"Opening spreadsheet: {sheet_id}")
         sheet = creds.open(sheet_id).worksheet("Database")
+        logging.info("Spreadsheet opened successfully.")
         # Check if headers exist; if not, add them.
         values = sheet.get_all_values()
         if not values or not values[0]:
