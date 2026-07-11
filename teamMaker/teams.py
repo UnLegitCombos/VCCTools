@@ -57,10 +57,13 @@ def get_cached_role_balance(team_roles, team_secondary_roles=None):
 
 def load_config():
     """
-    Load configuration from config.json file
+    Load configuration from config.json (for ratings) and config_tighter_teams.json (for optimization params)
+
+    This allows using the correct rank values and scoring weights from config.json
+    while using optimized parameters from config_tighter_teams.json for better team balance.
 
     Returns:
-        dict: Configuration settings
+        dict: Configuration settings with correct ratings and optimized parameters
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(script_dir, "config.json")
@@ -68,16 +71,9 @@ def load_config():
     try:
         with open(config_path, "r") as f:
             config = json.load(f)
-
-            # Set random seed if provided in config
-            if "random_seed" in config:
-                random.seed(config["random_seed"])
-                print(f"Using random seed: {config['random_seed']}")
-
-            return config
     except FileNotFoundError:
         print("Config file not found. Using default configuration.")
-        return {
+        config = {
             "players_file": "playersexample.json",
             "mode": "basic",  # "basic" or "advanced"
             # Basic mode settings (existing functionality)
@@ -140,6 +136,48 @@ def load_config():
             "max_no_improvement": 100000,
             "random_seed": None,
         }
+
+    # Load optimization parameters from config_tighter_teams.json, if present
+    tighter_config_path = os.path.join(script_dir, "config_tighter_teams.json")
+    try:
+        with open(tighter_config_path, "r") as f:
+            tighter_config = json.load(f)
+
+        # Override ONLY optimization and compression parameters, keep core rating params from config.json
+        optimization_params = [
+            "early_termination_threshold",
+            "annealing_iterations",
+            "initial_temperature",
+            "cooling_rate",
+            "max_no_improvement",
+            "max_time",
+            "use_adaptive_cooling",
+            "use_tabu_search",
+            "tabu_tenure",
+            "max_restarts",
+            "restart_threshold",
+            # Top-tier compression settings
+            "use_top_tier_compression",
+            "top_tier_gap_compression",
+            "top_tier_score_reduction",
+            "compression_full_strength_ranks",
+            "compression_taper_ranks",
+        ]
+
+        for param in optimization_params:
+            if param in tighter_config:
+                config[param] = tighter_config[param]
+
+        print("Loaded optimization parameters from config_tighter_teams.json")
+    except FileNotFoundError:
+        pass
+
+    # Set random seed if provided in config
+    if "random_seed" in config:
+        random.seed(config["random_seed"])
+        print(f"Using random seed: {config['random_seed']}")
+
+    return config
 
 
 def get_role_balance_score(team_roles, team_secondary_roles=None):

@@ -3,25 +3,13 @@
 A set of tools designed to simplify and enhance the Valorant Community Cup (VCC) tournament experience:
 
 - **Team Maker**: Quickly create balanced teams, respecting player groupings like duos or trios.
-- **Stats Tracker**: Automatically track detailed match statistics with Google Sheets integration.
-- **VLR Formula Approximator**: Analyze player stats, scrape data from VLR.gg, and generate accurate formulas for predicting VLR ratings.
 - **Playoffs Scenarios Generator** _(coming soon)_: Simulate and explore playoff outcomes.
 
 ## Table of Contents
 
 - [Team Maker](#team-maker)
-
   - [Features](#features-team-maker)
   - [Usage](#usage-team-maker)
-
-- [Stats Tracker](#stats-tracker)
-
-  - [Features](#features-stats-tracker)
-  - [Usage](#usage-stats-tracker)
-
-- [VLR Formula Approximator](#vlr-formula-approximator)
-  - [Features](#features-vlr-formula-approximator)
-  - [Usage](#usage-vlr-formula-approximator)
 
 ---
 
@@ -53,8 +41,12 @@ Efficiently create fair and balanced teams while keeping groups intact. Supports
 #### Quick Start
 
 1. Copy configuration template: `teamMaker/config.example.json` → `teamMaker/config.json`
-2. Copy player template: `teamMaker/playersexample.json` → `teamMaker/players.json`
-3. Update player details in `teamMaker/players.json`
+2. Build `teamMaker/players.json` from the season sign-up form export:
+   - Drop the sign-up CSV export into `teamMaker/data/`
+   - Configure `teamMaker/player_ratings_config.yaml` (current act, season links, etc.)
+   - Run `python teamMaker/generate_players.py` — scrapes tracker.gg and vlrcommunitycup.com and writes `teamMaker/players.json` directly
+   - **Note:** the generator doesn't know about manually-assigned `group_id` or `ping` values — merge those in by hand after generating, or maintain `teamMaker/players.json` by hand instead (copy `teamMaker/playersexample.json` as a starting template)
+3. Update player details in `teamMaker/players.json` as needed
 4. Customize settings in `teamMaker/config.json` (optional)
 5. Execute:
 
@@ -89,57 +81,5 @@ Players can include:
 - Tracker scores: `current_tracker`, `peak_tracker`
 - Advanced: `role`, `region`, `peak_act` (episode.act format)
 - Previous seasons: `previous_season` object with S8/S9 data
-
----
-
-## Stats Tracker
-
-Automatically gathers and uploads detailed match statistics to Google Sheets.
-
-### Features (Stats Tracker)
-
-- Fetches matches automatically via Henrik's VALORANT API.
-- Filters out non-tournament matches intelligently.
-- Provides extensive statistics (ACS, K/D, ADR, KAST, clutch rates, etc.).
-- Automatic Google Sheets integration.
-
-### Usage (Stats Tracker)
-
-1. Setup configurations:
-
-   - Copy and configure: `stats/config.example.json` → `stats/config.json`
-   - Copy and configure: `stats/credentials.example.json` → `stats/credentials.json`
-
-2. Run the tracker:
-
-```bash
-python stats/main.py
-```
-
----
-
-## VLR Formula Approximator
-
-Analyze Valorant player statistics and generate reliable VLR rating predictions.
-
-### Features (VLR Formula Approximator)
-
-- Scrapes and compiles comprehensive data from VLR.gg (2023–2025).
-- Generates accurate predictive formulas for VLR ratings.
-- Visualizes correlations and model accuracy.
-
-### Usage (VLR Formula Approximator)
-
-- Data scraping:
-
-```bash
-python formula/vlrstats.py
-```
-
-- Formula generation:
-
-```bash
-python formula/formula.py
-```
 
 ---

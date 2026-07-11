@@ -1,0 +1,46 @@
+TRACKER_API:
+  PROFILE_URL: "https://api.tracker.gg/api/v2/valorant/standard/profile/riot/{name}%23{tag}"
+  SEGMENT_URL: "https://api.tracker.gg/api/v2/valorant/standard/profile/riot/{name}%23{tag}/segments/season"
+  USER_AGENT: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  REQUEST_DELAY: 0.350
+
+DATA_DIR: "data"
+OUTPUT: "players.json"
+
+MIN_ROUNDS: 100
+CURRENT_ACT: "S26A3"
+
+REGION_MAP:
+  MENA: "MENA"
+  NA: "NA"
+  EU: "EU"
+
+# Maps CSV "previous_seasons" display names to keys in SEASONS
+SEASON_MAP:
+  "EMEA Season 10": "S_10"
+  "EMEA Season 11": "S_11"
+  "EMEA Season 12": "S_12"
+  "EMEA Season 13": "S_13"
+
+CURRENT_SEASON: "S_14"
+
+SEASONS:
+  S_10:
+    ID: "01fab460-b46d-4c42-a704-c01c9b9e56d2"
+    CODE: "S10"
+    LINK: "https://vlrcommunitycup.com/events/01fab460-b46d-4c42-a704-c01c9b9e56d2/vcc-emea-season-10?tab=stats&stage=group-stage"
+
+  S_11:
+    ID: "e7544cae-5eb6-4605-ba97-6cccb1e10e03"
+    CODE: "S11"
+    LINK: "https://vlrcommunitycup.com/events/e7544cae-5eb6-4605-ba97-6cccb1e10e03/vcc-emea-season-11?tab=stats&stage=group-stage"
+
+  S_12:
+    ID: "e1501ae7-528d-4a5f-98f6-0d17bf0037aa"
+    CODE: "S12"
+    LINK: "https://vlrcommunitycup.com/events/e1501ae7-528d-4a5f-98f6-0d17bf0037aa/vcc-emea-season-12?tab=stats&stage=group-stage"
+
+  S_13:
+    ID: "46b2bbc3-b160-461e-9966-1f05dbfa3e1a"
+    CODE: "S13"
+    LINK: "https://vlrcommunitycup.com/events/46b2bbc3-b160-461e-9966-1f05dbfa3e1a/vcc-emea-season-13?tab=stats&stage=group-stage"

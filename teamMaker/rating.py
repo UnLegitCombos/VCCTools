@@ -63,7 +63,7 @@ def rank_to_numeric_with_rr(rank_str, rank_values, rr_value=None):
     return base_value
 
 
-def parse_peak_act(peak_act_str, current_season=25, current_act=3):
+def parse_peak_act(peak_act_str, current_season=26, current_act=4):
     """Parse peak act string and calculate acts ago.
 
     Bug Fix #1: Enhanced to handle evolving episode-to-season transition.
@@ -94,10 +94,10 @@ def parse_peak_act(peak_act_str, current_season=25, current_act=3):
                 episode = int(parts[0])
                 act = int(parts[1])
                 if (
-                    episode < 1
-                    or episode > EPISODE_TO_SEASON_TRANSITION_EP
-                    or act < 1
-                    or act > 3
+                        episode < 1
+                        or episode > EPISODE_TO_SEASON_TRANSITION_EP
+                        or act < 1
+                        or act > 3
                 ):
                     return 0
 
@@ -106,11 +106,11 @@ def parse_peak_act(peak_act_str, current_season=25, current_act=3):
 
                 # Calculate current position accounting for transition
                 transition_total_acts = (
-                    EPISODE_TO_SEASON_TRANSITION_EP - 1
-                ) * 3 + EPISODE_TO_SEASON_TRANSITION_ACT
+                                                EPISODE_TO_SEASON_TRANSITION_EP - 1
+                                        ) * 3 + EPISODE_TO_SEASON_TRANSITION_ACT
                 current_season_acts = (
-                    current_season - FIRST_SEASON_NUMBER
-                ) * 4 + current_act
+                                              current_season - FIRST_SEASON_NUMBER
+                                      ) * 4 + current_act
                 current_total_acts = transition_total_acts + current_season_acts
 
                 return max(0, current_total_acts - peak_total_acts)
@@ -125,8 +125,8 @@ def parse_peak_act(peak_act_str, current_season=25, current_act=3):
 
                 # Both peak and current are in season format
                 current_total_season_acts = (
-                    current_season - FIRST_SEASON_NUMBER
-                ) * 4 + current_act
+                                                    current_season - FIRST_SEASON_NUMBER
+                                            ) * 4 + current_act
                 peak_total_season_acts = (season - FIRST_SEASON_NUMBER) * 4 + act
                 return max(0, current_total_season_acts - peak_total_season_acts)
 
@@ -485,8 +485,8 @@ def compute_player_score_detailed(player_info, config):
         breakdown["rank_components"]["peak_rr"] = peak_rr
 
     current_score = (
-        config.get("weight_current", 0.8) * current_val
-        + config.get("weight_peak", 0.2) * peak_val
+            config.get("weight_current", 0.8) * current_val
+            + config.get("weight_peak", 0.2) * peak_val
     )
     breakdown["base_score"] = current_score
 
@@ -505,8 +505,8 @@ def compute_player_score_detailed(player_info, config):
             if peak_val > 0:
                 consistency_factor += 0.1 * (current_val / peak_val)
             current_score = (
-                current_score + cur_score + peak_score
-            ) * consistency_factor
+                                    current_score + cur_score + peak_score
+                            ) * consistency_factor
             breakdown["tracker_components"] = {
                 "enabled": True,
                 "current_tracker": cur_tracker,
@@ -539,7 +539,7 @@ def compute_player_score_detailed(player_info, config):
 
                     # Check if episode/act is at or before the threshold
                     if episode_num < max_episode or (
-                        episode_num == max_episode and act_num <= max_act
+                            episode_num == max_episode and act_num <= max_act
                     ):
                         should_apply_bonus = True
                 except (ValueError, IndexError):
@@ -548,8 +548,8 @@ def compute_player_score_detailed(player_info, config):
             if should_apply_bonus:
                 acts_ago = parse_peak_act(
                     peak_act_str,
-                    config.get("current_season", 25),
-                    config.get("current_act", 3),
+                    config.get("current_season", 26),
+                    config.get("current_act", 4),
                 )
                 act_weight = calculate_peak_act_weight(
                     acts_ago, config.get("peak_act_decay_rate", 0.9)
@@ -578,7 +578,7 @@ def compute_player_score_detailed(player_info, config):
 
         # Previous season blend with recency-based weighting
         if config.get("use_returning_player_stats", False) and player_info.get(
-            "is_returning_player", False
+                "is_returning_player", False
         ):
             prev_score = calculate_previous_season_score(player_info, config)
             if prev_score > 0:
@@ -602,7 +602,7 @@ def compute_player_score_detailed(player_info, config):
                 most_recent_season = get_most_recent_season(prev_stats)
 
                 # Get the latest season available from config (configurable for future seasons)
-                most_recent_available = config.get("latest_season_available", 10)
+                most_recent_available = config.get("latest_season_available", 13)
 
                 # Determine blend weights based on data recency
                 if most_recent_season >= most_recent_available:  # S10 is most recent
@@ -618,7 +618,7 @@ def compute_player_score_detailed(player_info, config):
 
                 # Apply the blend
                 current_score = (
-                    current_score * ranked_weight + prev_score * previous_weight
+                        current_score * ranked_weight + prev_score * previous_weight
                 )
 
                 adv["previous_season"] = {
@@ -785,7 +785,7 @@ def apply_top_tier_compression(player_scores_dict, config):
             # Blend between compressed and original gap
             compressed_gap = original_gap * gap_compression_factor
             tapered_gap = compressed_gap * taper_strength + original_gap * (
-                1 - taper_strength
+                    1 - taper_strength
             )
 
             compressed_scores[player] = prev_compressed_score - tapered_gap
@@ -851,7 +851,7 @@ def _export_scores(players_data, config, out_detailed, out_minimal):
             detailed[name]["final_score"] = compressed_score
 
     # Round minimal scores
-    minimal = {name: round(score, 2) for name, score in minimal.items()}
+    minimal = {name: round(score, 1) for name, score in minimal.items()}
 
     # Sort both by final score
     detailed = dict(
