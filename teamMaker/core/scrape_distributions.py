@@ -6,11 +6,11 @@ import urllib.request
 import yaml
 from bs4 import BeautifulSoup
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def load_config():
-    with open(os.path.join(SCRIPT_DIR, "player_ratings_config.yaml")) as f:
+    with open(os.path.join(BASE_DIR, "config", "player_ratings_config.yaml")) as f:
         return yaml.safe_load(f)
 
 
@@ -63,9 +63,9 @@ def scrape_all_adjusted_ratings(url, user_agent):
 
 def main():
     config = load_config()
-    seasons = config.get("SEASONS", {})
-    ua = config["TRACKER_API"]["USER_AGENT"]
-    output_path = os.path.join(SCRIPT_DIR, "season_distributions.json")
+    seasons = config.get("seasons", {})
+    ua = config["tracker_api"]["user_agent"]
+    output_path = os.path.join(BASE_DIR, "archive", "season_distributions.json")
 
     # Load existing file so we can update without clobbering other seasons
     if os.path.isfile(output_path):
@@ -75,10 +75,10 @@ def main():
         distributions = {}
 
     for season_key, season_info in seasons.items():
-        code = season_info.get("CODE")
-        link = season_info.get("LINK")
+        code = season_info.get("code")
+        link = season_info.get("link")
         if not code or not link:
-            print(f"Skipping {season_key}: missing CODE or LINK")
+            print(f"Skipping {season_key}: missing code or link")
             continue
 
         print(f"Scraping {code} distribution from {link}...")

@@ -7,6 +7,8 @@ import time
 import bisect
 import warnings
 
+import yaml
+
 
 # Global cache for season distributions to avoid repeated file I/O (Bug Fix #5)
 _SEASON_DISTRIBUTIONS_CACHE = None
@@ -174,8 +176,8 @@ def _get_season_distributions(config):
         return _SEASON_DISTRIBUTIONS_CACHE
 
     # Load from file and cache
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    json_path = os.path.join(base_dir, "season_distributions.json")
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    json_path = os.path.join(base_dir, "archive", "season_distributions.json")
     if os.path.isfile(json_path):
         try:
             with open(json_path, "r", encoding="utf-8") as f:
@@ -185,7 +187,7 @@ def _get_season_distributions(config):
             }
             return _SEASON_DISTRIBUTIONS_CACHE
         except Exception as e:
-            print("Could not load season_distributions.json:", e)
+            print("Could not load archive/season_distributions.json:", e)
 
     _SEASON_DISTRIBUTIONS_CACHE = {}
     return _SEASON_DISTRIBUTIONS_CACHE
@@ -812,14 +814,14 @@ __all__ = [
 
 
 def _load_config():
-    """Load configuration from config.json."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    cfg_path = os.path.join(script_dir, "config.json")
+    """Load configuration from config/config.yaml."""
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    cfg_path = os.path.join(base_dir, "config", "config.yaml")
     if not os.path.isfile(cfg_path):
-        print("Missing config.json (no embedded defaults anymore). Aborting.")
+        print("Missing config/config.yaml (no embedded defaults anymore). Aborting.")
         return {}
     with open(cfg_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+        return yaml.safe_load(f)
 
 
 def _load_players(players_path):
@@ -879,13 +881,13 @@ def _print_summary(minimal_scores, top=10):
 def main():
     """Main entry point for score calculation."""
     start = time.time()
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config = _load_config()
     if not config:
         return
     players_file = config.get("players_file", "players.json")
     if not os.path.isabs(players_file):
-        players_path = os.path.join(script_dir, players_file)
+        players_path = os.path.join(base_dir, "data", players_file)
     else:
         players_path = players_file
     print("Loading players from:", players_path)
@@ -894,8 +896,10 @@ def main():
     except Exception as e:
         print("Failed to load players:", e)
         return
-    out_detailed = os.path.join(script_dir, "player_scores.json")
-    out_minimal = os.path.join(script_dir, "player_scores_minimal.json")
+    out_dir = os.path.join(base_dir, "output")
+    os.makedirs(out_dir, exist_ok=True)
+    out_detailed = os.path.join(out_dir, "player_scores.json")
+    out_minimal = os.path.join(out_dir, "player_scores_minimal.json")
     detailed, minimal = _export_scores(players_data, config, out_detailed, out_minimal)
     _print_summary(minimal)
     print(f"\nExported {len(minimal)} player scores.")

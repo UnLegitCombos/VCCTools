@@ -47,16 +47,16 @@ def _act_name_to_code(name):
 
 # Returns tracker_current, tracker_peak, current_rank, peak_rank, peak_rank_act
 def fetch_tracker_data(name, tag, config):
-    ua = config["TRACKER_API"]["USER_AGENT"]
-    delay = config["TRACKER_API"].get("REQUEST_DELAY", 0.25)
+    ua = config["tracker_api"]["user_agent"]
+    delay = config["tracker_api"].get("request_delay", 0.25)
 
     profile_url = (
-        config["TRACKER_API"]["PROFILE_URL"]
+        config["tracker_api"]["profile_url"]
         .replace("{name}", quote(name))
         .replace("{tag}", quote(tag))
     )
     segment_url = (
-        config["TRACKER_API"]["SEGMENT_URL"]
+        config["tracker_api"]["segment_url"]
         .replace("{name}", quote(name))
         .replace("{tag}", quote(tag))
     )
@@ -73,7 +73,7 @@ def fetch_tracker_data(name, tag, config):
 
     # If a specific act is configured, find its UUID so we pull from that act
     # instead of the defaultSeason (which may be a fresh act with reset ranks).
-    configured_act = config.get("CURRENT_ACT")
+    configured_act = config.get("current_act")
     current_season_id = None
     if configured_act:
         for sid, sname in seasons_by_id.items():
@@ -81,7 +81,7 @@ def fetch_tracker_data(name, tag, config):
                 current_season_id = sid
                 break
         if not current_season_id:
-            print(f"  [tracker] WARNING: CURRENT_ACT '{configured_act}' not found in seasons list; falling back to defaultSeason")
+            print(f"  [tracker] WARNING: current_act '{configured_act}' not found in seasons list; falling back to defaultSeason")
     if not current_season_id:
         current_season_id = default_season_id
 

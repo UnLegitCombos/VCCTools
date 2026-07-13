@@ -6,8 +6,11 @@ import random
 import copy
 import multiprocessing as mp
 from collections import defaultdict, deque
+
+import yaml
 from tqdm import tqdm
-from rating import (
+
+from teamMaker.core.scoring import (
     compute_player_score,
     compute_player_score_detailed,
     apply_top_tier_compression,
@@ -57,20 +60,21 @@ def get_cached_role_balance(team_roles, team_secondary_roles=None):
 
 def load_config():
     """
-    Load configuration from config.json (for ratings) and config_tighter_teams.json (for optimization params)
+    Load configuration from config/config.yaml (for ratings) and config/config_tighter_teams.yaml (for optimization params)
 
-    This allows using the correct rank values and scoring weights from config.json
-    while using optimized parameters from config_tighter_teams.json for better team balance.
+    This allows using the correct rank values and scoring weights from config.yaml
+    while using optimized parameters from config_tighter_teams.yaml for better team balance.
 
     Returns:
         dict: Configuration settings with correct ratings and optimized parameters
     """
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(script_dir, "config.json")
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_dir = os.path.join(base_dir, "config")
+    config_path = os.path.join(config_dir, "config.yaml")
 
     try:
         with open(config_path, "r") as f:
-            config = json.load(f)
+            config = yaml.safe_load(f)
     except FileNotFoundError:
         print("Config file not found. Using default configuration.")
         config = {
@@ -137,13 +141,13 @@ def load_config():
             "random_seed": None,
         }
 
-    # Load optimization parameters from config_tighter_teams.json, if present
-    tighter_config_path = os.path.join(script_dir, "config_tighter_teams.json")
+    # Load optimization parameters from config_tighter_teams.yaml, if present
+    tighter_config_path = os.path.join(config_dir, "config_tighter_teams.yaml")
     try:
         with open(tighter_config_path, "r") as f:
-            tighter_config = json.load(f)
+            tighter_config = yaml.safe_load(f)
 
-        # Override ONLY optimization and compression parameters, keep core rating params from config.json
+        # Override ONLY optimization and compression parameters, keep core rating params from config.yaml
         optimization_params = [
             "early_termination_threshold",
             "annealing_iterations",
@@ -168,7 +172,7 @@ def load_config():
             if param in tighter_config:
                 config[param] = tighter_config[param]
 
-        print("Loaded optimization parameters from config_tighter_teams.json")
+        print("Loaded optimization parameters from config_tighter_teams.yaml")
     except FileNotFoundError:
         pass
 
@@ -293,7 +297,7 @@ def build_groups(players_data, config):
     for g_id, members in group_map.items():
         group_size = len(members)
         # Use precomputed final score (from rating._export_scores) if available to ensure
-        # exact parity with rating.py; otherwise fall back to compute_player_score.
+        # exact parity with scoring.py; otherwise fall back to compute_player_score.
         total_score = 0.0
         for m in members:
             p = players_data.get(m, {})
@@ -559,8 +563,10 @@ def export_player_scores(players_data, config, output_file=None):
         dict: Dictionary mapping player names to their scores
     """
     if output_file is None:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        output_file = os.path.join(script_dir, "player_scores.json")
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out_dir = os.path.join(base_dir, "output")
+        os.makedirs(out_dir, exist_ok=True)
+        output_file = os.path.join(out_dir, "player_scores.json")
 
     player_scores = {}
 
@@ -613,8 +619,10 @@ def export_minimal_player_scores(players_data, config, output_file=None):
         dict: Dictionary mapping player names to their final scores
     """
     if output_file is None:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        output_file = os.path.join(script_dir, "player_scores_minimal.json")
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out_dir = os.path.join(base_dir, "output")
+        os.makedirs(out_dir, exist_ok=True)
+        output_file = os.path.join(out_dir, "player_scores_minimal.json")
 
     minimal_scores = {}
 
@@ -1505,7 +1513,7 @@ def main():
     """
     Main program logic
     """
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # Load configuration
     config = load_config()
@@ -1526,7 +1534,7 @@ def main():
     # Determine players file path from config
     players_file = config.get("players_file", "players.json")
     players_path = (
-        os.path.join(script_dir, players_file)
+        os.path.join(base_dir, "data", players_file)
         if not os.path.isabs(players_file)
         else players_file
     )
@@ -1544,12 +1552,14 @@ def main():
         return
 
     # Always export player scores by default (both detailed and minimal)
-    detailed_output_file = os.path.join(script_dir, "player_scores.json")
-    minimal_output_file = os.path.join(script_dir, "player_scores_minimal.json")
+    out_dir = os.path.join(base_dir, "output")
+    os.makedirs(out_dir, exist_ok=True)
+    detailed_output_file = os.path.join(out_dir, "player_scores.json")
+    minimal_output_file = os.path.join(out_dir, "player_scores_minimal.json")
 
-    # Use rating._export_scores to compute scores (ensures identical logic to rating.py)
+    # Use scoring._export_scores to compute scores (ensures identical logic to scoring.py)
     try:
-        from rating import _export_scores
+        from teamMaker.core.scoring import _export_scores
 
         detailed_scores, minimal_scores = _export_scores(
             players_data, config, detailed_output_file, minimal_output_file

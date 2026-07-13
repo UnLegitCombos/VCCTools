@@ -21,13 +21,14 @@ def scrape_adjusted_rating(player_id, season_url, user_agent):
         return None, None
 
     thead = table.find("thead")
-    ths = thead.find("tr").find_all("th") if thead else []
+    thead_row = thead.find("tr") if thead else None
+    ths = thead_row.find_all("th") if thead_row else []
     ar_idx = None
     rounds_idx = None
     for i, th in enumerate(ths):
-        title = th.get("title", "")
+        title = th.get("title")
         text = th.get_text(strip=True)
-        if "Adjusted rating" in title or text == "aR":
+        if (title and "Adjusted rating" in title) or text == "aR":
             ar_idx = i
         if text == "RND":
             rounds_idx = i

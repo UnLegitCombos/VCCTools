@@ -25,7 +25,7 @@ Efficiently create fair and balanced teams while keeping groups intact. Supports
 - Keeps duos/trios together automatically
 - Supports both **Basic** and **Advanced** optimization modes
 - Optimizes teams based on rank, tracker scores, and custom criteria
-- Configurable via `config.json` with extensive customization options
+- Configurable via `config.yaml` with extensive customization options
 
 #### Advanced Features (Advanced Mode Only)
 
@@ -40,18 +40,18 @@ Efficiently create fair and balanced teams while keeping groups intact. Supports
 
 #### Quick Start
 
-1. Copy configuration template: `teamMaker/config.example.json` → `teamMaker/config.json`
-2. Build `teamMaker/players.json` from the season sign-up form export:
-   - Drop the sign-up CSV export into `teamMaker/data/`
-   - Configure `teamMaker/player_ratings_config.yaml` (current act, season links, etc.)
-   - Run `python teamMaker/generate_players.py` — scrapes tracker.gg and vlrcommunitycup.com and writes `teamMaker/players.json` directly
-   - **Note:** the generator doesn't know about manually-assigned `group_id` or `ping` values — merge those in by hand after generating, or maintain `teamMaker/players.json` by hand instead (copy `teamMaker/playersexample.json` as a starting template)
-3. Update player details in `teamMaker/players.json` as needed
-4. Customize settings in `teamMaker/config.json` (optional)
-5. Execute:
+1. Copy configuration template: `teamMaker/config/config.example.yaml` → `teamMaker/config/config.yaml`
+2. Build `teamMaker/data/players.json` from the season sign-up form export:
+   - Drop the sign-up CSV export into `teamMaker/data/input/`
+   - Configure `teamMaker/config/player_ratings_config.yaml` (current act, season links, etc.)
+   - Run `python -m teamMaker.core.generate_players` (from the repo root) — scrapes tracker.gg and vlrcommunitycup.com and writes `teamMaker/data/players.json` directly
+   - **Note:** the generator doesn't know about manually-assigned `group_id` or `ping` values — merge those in by hand after generating, or maintain `teamMaker/data/players.json` by hand instead (copy `teamMaker/data/playersexample.json` as a starting template)
+3. Update player details in `teamMaker/data/players.json` as needed
+4. Customize settings in `teamMaker/config/config.yaml` (optional)
+5. Execute (from the repo root):
 
 ```bash
-python teamMaker/teams.py
+python -m teamMaker.core.build_teams
 ```
 
 #### Configuration Options

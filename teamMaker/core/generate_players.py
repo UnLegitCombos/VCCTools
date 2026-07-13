@@ -1,5 +1,6 @@
 import csv
 import glob
+import io
 import json
 import os
 import sys
@@ -7,21 +8,22 @@ import time
 
 import yaml
 
-sys.stdout.reconfigure(encoding="utf-8")
+if isinstance(sys.stdout, io.TextIOWrapper):
+    sys.stdout.reconfigure(encoding="utf-8")
 
-from utils.helpers import (
+from teamMaker.core.utils.helpers import (
     parse_roles,
     parse_tracker_url,
     parse_vcc_player_id,
     parse_vcc_player_name,
 )
-from utils.tracker import fetch_tracker_data
-from utils.vcc import scrape_adjusted_rating
+from teamMaker.core.utils.tracker import fetch_tracker_data
+from teamMaker.core.utils.vcc import scrape_adjusted_rating
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def load_config():
-    with open(os.path.join(SCRIPT_DIR, "player_ratings_config.yaml")) as f:
+    with open(os.path.join(BASE_DIR, "config", "player_ratings_config.yaml")) as f:
         return yaml.safe_load(f)
 
 def find_latest_csv(data_dir):
@@ -71,26 +73,26 @@ def process_row(row, config):
                 f"rank={tracker_data.get('current_rank')}  "
                 f"peak_rank={tracker_data.get('peak_rank')} ({tracker_data.get('peak_rank_act')})"
             )
-        time.sleep(config["TRACKER_API"].get("REQUEST_DELAY", 0.25))
+        time.sleep(config["tracker_api"].get("request_delay", 0.25))
 
     # --- VCC previous-season adjusted ratings ---
     prev_stats = []
     if returning and prev_seasons_str and vcc_profile:
         player_id = parse_vcc_player_id(vcc_profile)
-        season_map = config.get("SEASON_MAP", {})
-        seasons = config.get("SEASONS", {})
-        ua = config["TRACKER_API"]["USER_AGENT"]
-        delay = config["TRACKER_API"].get("REQUEST_DELAY", 0.25)
+        season_map = config.get("season_map", {})
+        seasons = config.get("seasons", {})
+        ua = config["tracker_api"]["user_agent"]
+        delay = config["tracker_api"].get("request_delay", 0.25)
 
-        min_rounds = config.get("MIN_ROUNDS", 0)
+        min_rounds = config.get("min_rounds", 0)
         if player_id:
             for season_display in prev_seasons_str.split(","):
                 season_key = season_map.get(season_display.strip())
                 if not season_key or season_key not in seasons:
                     continue
                 season_info = seasons[season_key]
-                code = season_info.get("CODE", season_key.replace("_", ""))
-                link = season_info.get("LINK")
+                code = season_info.get("code", season_key.replace("_", ""))
+                link = season_info.get("link")
                 if link:
                     print(f"  Scraping {code} aR for {player_name}...")
                     ar, rounds = scrape_adjusted_rating(player_id, link, ua)
@@ -98,7 +100,7 @@ def process_row(row, config):
                         if rounds is None or rounds >= min_rounds:
                             prev_stats.append({"season": code, "adjusted_rating": ar})
                         else:
-                            print(f"  Skipping {code} for {player_name}: {rounds} rounds < MIN_ROUNDS ({min_rounds})")
+                            print(f"  Skipping {code} for {player_name}: {rounds} rounds < min_rounds ({min_rounds})")
                     time.sleep(delay)
 
     entry = {
@@ -109,7 +111,7 @@ def process_row(row, config):
         "tracker_peak": tracker_data.get("tracker_peak"),
         "tracker_current": tracker_data.get("tracker_current"),
         "role": parse_roles(roles_str),
-        "region": config.get("REGION_MAP", {}).get(server, "EU"),
+        "region": config.get("region_map", {}).get(server, "EU"),
         "is_returning_player": returning,
     }
     if prev_stats:
@@ -119,8 +121,8 @@ def process_row(row, config):
 
 def main():
     config = load_config()
-    data_dir = os.path.join(SCRIPT_DIR, config.get("DATA_DIR", "data"))
-    output_path = os.path.join(SCRIPT_DIR, config.get("OUTPUT", "output.json"))
+    data_dir = os.path.join(BASE_DIR, "data", config.get("data_dir", "input"))
+    output_path = os.path.join(BASE_DIR, "data", config.get("output", "players.json"))
 
     csv_path = find_latest_csv(data_dir)
     print(f"CSV: {csv_path}\n")

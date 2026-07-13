@@ -159,12 +159,11 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 .idea/
 
-teamMaker/player_scores.json
-teamMaker/player_scores_minimal.json
+teamMaker/output/
 
 # Sensitive configuration files
-teamMaker/config.json
-teamMaker/players.json
+teamMaker/config/config.yaml
+teamMaker/data/players.json
 stats/config.json
 stats/credentials.json
 
@@ -172,6 +171,6 @@ stats/credentials.json
 stats/masterList.json
 stats/matchList.json
 formula/data/
-teamMaker/data/
-teamMaker/players_missing.json
+teamMaker/data/input/
+teamMaker/data/players_missing.json
 stats/matchListBackup.json
