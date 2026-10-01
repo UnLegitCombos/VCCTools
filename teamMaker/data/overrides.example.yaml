@@ -1,0 +1,19 @@
+# Copy to teamMaker/data/overrides.yaml (gitignored) to patch players.json
+# entries generated from the signup CSV. Applied by generate_players after the
+# tracker and VCC data has been fetched.
+#
+# Keys are the player name as it appears in players.json (or the discord handle),
+# matched case-insensitively. Allowed fields per player:
+#   ping      explicit ping in ms (used by the ping adjustment)
+#   group_id  integer stack id; null makes the player a solo/sub
+#   status    active | substitute | skip   (skip drops the player)
+#   role      list of roles or a comma separated string
+#   region    EU | NA | MENA
+ExamplePlayerOne:
+  ping: 45
+ExamplePlayerTwo:
+  region: NA
+  ping: 110
+  role: [duelist, initiator]
+example_discord_handle:
+  status: substitute

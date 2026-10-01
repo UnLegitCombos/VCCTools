@@ -1,14 +1,11 @@
-tracker_api:
-  profile_url: "https://api.tracker.gg/api/v2/valorant/standard/profile/riot/{name}%23{tag}"
-  segment_url: "https://api.tracker.gg/api/v2/valorant/standard/profile/riot/{name}%23{tag}/segments/season"
-  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-  request_delay: 0.350
-
 data_dir: "input"
 output: "players.json"
 
 min_rounds: 100
-current_act: "S26A3"
+
+# Warn when a player's hand-entered rank and VCC history disagree by at least
+# this many standard deviations (rank vs this signup pool, aR vs its season).
+vcc_check_threshold: 1.5
 
 region_map:
   MENA: "MENA"
@@ -21,8 +18,15 @@ season_map:
   "EMEA Season 11": "S_11"
   "EMEA Season 12": "S_12"
   "EMEA Season 13": "S_13"
+  "EMEA Summer 2026": "S_14"
 
-current_season: "S_14"
+# VCC stats scraping (scrape_distributions and generate_players)
+vcc:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  request_delay: 1.0        # seconds between season page fetches
+  stats_stage: all          # "all" drops the stage filter (all stages of a season)
+  refresh_existing: false   # true re-scrapes seasons already in the archive
+  ar_decimals: 2            # decimals of stored adjusted ratings
 
 seasons:
   S_10:
@@ -44,3 +48,8 @@ seasons:
     id: "46b2bbc3-b160-461e-9966-1f05dbfa3e1a"
     code: "S13"
     link: "https://vlrcommunitycup.com/events/46b2bbc3-b160-461e-9966-1f05dbfa3e1a/vcc-emea-season-13?tab=stats&stage=group-stage"
+
+  S_14:
+    id: "c14c5428-de7f-44c0-9bbe-0420d563c5de"
+    code: "S14"
+    link: "https://vlrcommunitycup.com/events/c14c5428-de7f-44c0-9bbe-0420d563c5de/vcc-emea-summer-2026?tab=stats&stage=group-stage"

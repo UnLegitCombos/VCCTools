@@ -1,31 +1,90 @@
+# VCC Team Maker - documented example configuration.
+#
+# Copy this file to config.yaml (gitignored) to customise it. A local
+# config.yaml can also start from a profile:
+#
+#   extends: config_tighter_teams.yaml
+#   random_seed: 7
+#
+# `extends` paths are relative to the file that declares them; the child wins
+# and dicts are merged key by key (lists are replaced). If config.yaml does not
+# exist, this file is used as-is.
+
 players_file: players.json
-mode: advanced
-current_season: 25
+mode: advanced                 # basic (ranks + tracker) or advanced (adds everything below)
+
+# --- Current period (only used to decay old Episode-era peak-act bonuses) ---
+current_season: 26
 current_act: 5
+acts_per_season: 6             # acts in a season (Episode acts stay at 3)
+
+# --- Rank / tracker weights ---
 use_tracker: true
-weight_current: 0.575
-weight_peak: 0.425
-weight_current_tracker: 0.15
-weight_peak_tracker: 0.075
+weight_current: 0.7
+weight_peak: 0.3
+weight_current_tracker: 0.2
+weight_peak_tracker: 0.1
+
+# --- Peak act bonus (Episode-era peaks up to E<max_episode>A<max_act>) ---
 use_peak_act: true
+peak_act_max_episode: 8
+peak_act_max_act: 1
+peak_act_decay_rate: 0.9
+weight_peak_act: 0.15
+
 use_role_balancing: true
-role_balance_weight: 15.0
-use_region_debuff: true
-non_eu_debuff: 0.9
+
+# --- Debuffs ---
+use_new_player_debuff: true    # players without previous-season data
 new_player_debuff: 0.95
-use_new_player_debuff: true
+use_region_debuff: false       # flat multiplier for non-EU; superseded by the ping curve
+non_eu_debuff: 0.9
+
+# --- Previous season stats (z-score against each season's distribution) ---
 use_returning_player_stats: true
-use_rating_scaled_debuffs: false
-debuff_min_scale: 0.5
-debuff_max_scale: 1.5
-debuff_midpoint_rating: 18.0
-debuff_scaling_steepness: 0.3
-debuff_max_penalty: 0.3
 recent_data_ranked_weight: 0.65
 recent_data_previous_weight: 0.35
 older_data_ranked_weight: 0.75
 older_data_previous_weight: 0.25
-latest_season_available: 10
+latest_season_available: auto  # auto = newest season in archive/season_distributions.json
+
+# --- Ping adjustment ---
+use_ping_adjustment: true
+use_region_ping_estimates: true    # estimate ping from region when a player has no `ping`
+region_ping_estimates:             # "ME" in player data is treated as MENA
+  EU: 30
+  MENA: 80
+  NA: 110
+  ASIA: 180
+  OCE: 200
+  SA: 170
+ping_breakpoints:                  # [ping_ms, penalty_fraction], linear in between
+- - 70
+  - 0.0
+- - 80
+  - 0.05
+- - 110
+  - 0.1
+- - 150
+  - 0.15
+- - 200
+  - 0.2
+
+# --- RR granularity (bonus on top of the rank value, relative to rank_values) ---
+use_immortal_rr_granularity: true
+radiant_rr_threshold: 550          # Radiant: + max(0, (RR - threshold) / 100)
+rr_granularity_ranks:
+- Immortal 3
+- Radiant
+rr_bonus_cap: 2.0                  # other listed ranks: + min(cap, RR / 100)
+
+# --- Top tier compression (monotone soft knee, never raises a score) ---
+# Scores above the knee percentile keep only `slope` of their excess.
+top_tier_compression:
+  enabled: false
+  knee_percentile: 90
+  slope: 0.5
+
 rank_values:
   Iron 1: 1
   Iron 2: 2
@@ -49,13 +108,49 @@ rank_values:
   Ascendant 2: 20
   Ascendant 3: 21
   Immortal 1: 23
-  Immortal 2: 24
-  Immortal 3: 25
+  Immortal 2: 25
+  Immortal 3: 27
   Radiant: 30
-max_time: 1200
-early_termination_threshold: 0.25
-annealing_iterations: 500000
-initial_temperature: 200.0
-cooling_rate: 0.997
-max_no_improvement: 200000
-random_seed: null
+
+# --- Randomness ---
+random_seed: null                  # null = draw a seed, print it and record it in the output
+
+# --- Team optimizer (used by build_teams) ---
+# Stacks of 1, 2, 3 or 5 players are supported; a 4-stack is invalid and excluded.
+# optimizer:
+#   iterations: 400000
+#   restarts: 8
+#   time_limit_s: 60
+#   t0: null                       # null = calibrate from sampled moves
+#   t_end: null
+#   target_range: 0.1              # stop early once max-min team score is below this
+#   range_weight: 1.0
+#   std_weight: 0.2
+#   role_weight: 0.5
+#   cluster_regions: [NA]          # regions kept together (only when `groups:` is set)
+#   cluster_max_teams: null        # null = derived from the London group size(s)
+#   cluster_weight: 2.0
+
+# --- Output ---
+# output:
+#   teams_png: true
+#   team_order: shuffled           # shuffled (seeded) or by_score
+
+# --- Groups (used by make_groups; enables the cluster term above) ---
+# groups:
+#   count: 3
+#   servers: [London, Frankfurt, Frankfurt]
+#   sizes: auto                    # auto or a list such as [6, 6, 6]
+#   region_server_cost:            # cost per player of that region in a group on that server
+#     Frankfurt:
+#       NA: 10                     # NA players outside London are expensive
+#     London:
+#       MENA: 2
+#   balance_weight: 1.0
+#   std_weight: 0.2
+#   mode: auto                     # auto, manual or reuse
+#   manual: null                   # for mode manual: [[team ids], [team ids], ...]
+#   pinned: {}                     # {team_id: group_number}
+#   iterations: 200000
+#   restarts: 4
+#   title: VCC Groups
