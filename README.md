@@ -115,7 +115,7 @@ The newest `*.csv` in `teamMaker/data/input/` is used.
 | `status` | Result |
 | --- | --- |
 | `Denied`, `Investigate` | Left out |
-| `Substitute` | Substitute |
+| `Substitute` | Substitute, and their whole stack sits out with them (stacks are never split) |
 | Anything else (`Approved`, `Pending`, `Pending Rating`, ...) | Plays |
 
 If the same Discord signed up more than once, only their latest row counts.

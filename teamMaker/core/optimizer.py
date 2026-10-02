@@ -89,9 +89,10 @@ def build_units(players, scores, config=None):
 
     Returns:
         BuildResult. Players with a null group_id or status "substitute"
-        go to the substitute pool; a missing group_id key makes a solo (with
-        a warning); stacks of 1-3 become units; stacks of 5 become fixed
-        teams; stacks of 4 or more than 5 are excluded with a reason.
+        go to the substitute pool, and a substitute takes their whole stack
+        with them (stacks are never split); a missing group_id key makes a
+        solo (with a warning); stacks of 1-3 become units; stacks of 5 become
+        fixed teams; stacks of 4 or more than 5 are excluded with a reason.
     """
     opt = (config or {}).get("optimizer") or {}
     cluster = {str(r).upper() for r in (opt.get("cluster_regions") or [])}
@@ -102,14 +103,14 @@ def build_units(players, scores, config=None):
     missing = []
     for position, (name, info) in enumerate(players.items()):
         signup = info.get("signup_index", position)
-        if info.get("status") == "substitute":
-            result.pool_subs.append((name, "substitute signup"))
-            continue
         if "group_id" not in info:
             missing.append(name)
             key = ("solo", name)
         elif info["group_id"] is None:
-            result.pool_subs.append((name, "substitute signup (no group_id)"))
+            reason = "substitute signup" if info.get("status") == "substitute" else (
+                "substitute signup (no group_id)"
+            )
+            result.pool_subs.append((name, reason))
             continue
         else:
             key = ("group", info["group_id"])
@@ -124,6 +125,22 @@ def build_units(players, scores, config=None):
 
     for key in order:
         members = groups[key]
+        subs = [m[0] for m in members if m[1].get("status") == "substitute"]
+        if subs:
+            # A substitute takes the whole stack out: stacks are never split.
+            for name, _, _ in members:
+                if name in subs:
+                    result.pool_subs.append((name, "substitute signup"))
+                else:
+                    result.pool_subs.append(
+                        (name, f"stack partner of substitute {', '.join(subs)}")
+                    )
+            if len(subs) < len(members):
+                result.warnings.append(
+                    f"{', '.join(subs)} is a substitute, so their stack sits out: "
+                    + ", ".join(m[0] for m in members)
+                )
+            continue
         size = len(members)
         names = tuple(m[0] for m in members)
         group_id = key[1] if key[0] == "group" else None

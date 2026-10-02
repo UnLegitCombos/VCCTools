@@ -91,6 +91,25 @@ def test_missing_group_id_is_solo_with_warning_and_null_is_sub():
     assert [n for n, _ in build.pool_subs] == ["P003"]
 
 
+def test_substitute_takes_whole_stack_out():
+    players, scores = make_players([2, 3, 5, 1])
+    names = list(players)
+    duo, trio, five = names[0:2], names[2:5], names[5:10]
+    players[duo[0]]["status"] = "substitute"
+    for n in trio:
+        players[n]["status"] = "substitute"
+    players[five[0]]["status"] = "substitute"
+    build = opt.build_units(players, scores, _config())
+    subs = dict(build.pool_subs)
+    assert set(duo + trio + five) == set(subs)
+    assert subs[duo[0]] == "substitute signup"
+    assert subs[duo[1]] == f"stack partner of substitute {duo[0]}"
+    assert [u.size for u in build.units] == [1]
+    assert not build.fixed and not build.excluded
+    assert any(duo[1] in w for w in build.warnings)
+    assert not any(trio[0] in w for w in build.warnings)  # whole stack chose to sub
+
+
 def test_select_units_multiple_of_five_and_packable():
     players, scores, config, build, kept, dropped = _prepare()
     total = sum(u.size for u in build.units)
