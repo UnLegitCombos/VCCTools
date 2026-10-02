@@ -175,5 +175,3 @@ teamMaker/data/input/
 teamMaker/data/players_missing.json
 stats/matchListBackup.json
 
-# Per-run overrides
-teamMaker/data/overrides.yaml

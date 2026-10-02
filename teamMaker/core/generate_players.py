@@ -2,8 +2,7 @@
 
 Ranks and tracker.gg scores are typed into the CSV by hand. The CSV-to-entries
 logic (build_player_entries) is pure and free of network access; the VCC stage
-(apply_previous_seasons), the rank-vs-VCC check and the overrides merge run on
-its result.
+(apply_previous_seasons) and the rank-vs-VCC check run on its result.
 """
 
 import argparse
@@ -33,11 +32,13 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 STACK_SIZES = {"solo": 1, "duo": 2, "trio": 3, "5 stack": 5, "5-stack": 5, "5stack": 5}
 ALLOWED_STACK_SIZES = (1, 2, 3, 5)
-STATUS_MAP = {"approved": "active", "substitute": "substitute"}
-OVERRIDE_FIELDS = ("ping", "group_id", "status", "role", "region")
-OVERRIDE_STATUSES = ("active", "substitute", "skip")
+# Only these CSV statuses keep a row out; Substitute rows become subs and
+# every other status (Approved, Pending, Pending Rating, ...) plays.
+EXCLUDED_STATUSES = ("denied", "investigate")
 # tracker.gg Tracker Score range; values outside it are probably typos.
 TRACKER_SCORE_RANGE = (0, 1000)
+# Plausible ping range in ms for the optional ping column.
+PING_RANGE = (1, 400)
 # "S25A6", "E8A1", "V26A4"; spaces and colons are ignored ("E26: A5").
 ACT_RE = re.compile(r"^([ESV])(\d+)A(\d+)$")
 
@@ -198,7 +199,7 @@ def parse_act(raw):
 
 
 def apply_csv_ratings(result, name, row, rank_values):
-    """Fill the hand-entered rank and tracker fields of one entry.
+    """Fill the hand-entered rank, tracker and ping fields of one entry.
 
     Missing values the score depends on become issues (players_missing.json);
     malformed or odd values become warnings.
@@ -259,12 +260,21 @@ def apply_csv_ratings(result, name, row, rank_values):
         result.issue(name, "tracker", "no peak tracker score (using the current one)")
         entry["tracker_peak"] = entry["tracker_current"]
 
+    # Optional; blank means scoring estimates ping from the region.
+    ping, ok = parse_number(row.get("ping"))
+    if not ok:
+        result.warn(f"{name}: ping '{row.get('ping')}' is not a number, ignored")
+    elif ping is not None and not PING_RANGE[0] <= ping <= PING_RANGE[1]:
+        result.warn(f"{name}: ping {ping} is outside {PING_RANGE[0]}-{PING_RANGE[1]} ms, ignored")
+        ping = None
+    entry["ping"] = ping
+
 
 def build_player_entries(rows, config, rank_values=None):
     """Turn CSV rows into players.json entries (no network access).
 
-    Approved rows become active players, substitute rows become subs with
-    group_id null, every other status is skipped and counted.
+    Denied and Investigate rows are skipped and counted, Substitute rows
+    become subs with group_id null, every other status becomes an active player.
 
     Args:
         rows: CSV rows as dicts (csv.DictReader output).
@@ -291,16 +301,36 @@ def build_player_entries(rows, config, rank_values=None):
     kept = []
     for index, row in enumerate(rows, start=1):
         status_raw = row.get("status", "").strip()
-        status = STATUS_MAP.get(status_raw.lower())
-        if status is None:
-            result.skipped[status_raw or "(blank)"] += 1
+        if status_raw.lower() in EXCLUDED_STATUSES:
+            result.skipped[status_raw] += 1
             continue
+        status = "substitute" if status_raw.lower() == "substitute" else "active"
         name = _base_name(row)
         if not name:
             result.warn(f"row {index} has no name, skipped")
             result.skipped["(no name)"] += 1
             continue
         kept.append({"row": row, "index": index, "name": name, "status": status})
+
+    # Same discord signed up more than once: the latest row (last in the CSV,
+    # i.e. the newest submission) is the accurate one; earlier rows are dropped.
+    latest = {}
+    for k in kept:
+        discord = k["row"].get("discord", "").strip().lower()
+        if discord:
+            latest[discord] = k["index"]
+    deduped = []
+    for k in kept:
+        discord = k["row"].get("discord", "").strip().lower()
+        if discord and latest[discord] != k["index"]:
+            result.warn(
+                f"{k['name']} signed up more than once; using the latest submission "
+                f"(row {latest[discord]}), row {k['index']} ignored"
+            )
+            result.skipped["older duplicate signup"] += 1
+            continue
+        deduped.append(k)
+    kept = deduped
 
     # Name collisions -> "Name (discord)"
     counts = Counter(k["name"].lower() for k in kept)
@@ -311,7 +341,7 @@ def build_player_entries(rows, config, rank_values=None):
             result.warn(f"name collision on '{k['name']}', using '{unique}'")
             k["name"] = unique
 
-    # group ids: ints in first-appearance order over approved rows
+    # group ids: ints in first-appearance order over active rows
     group_ids = {}
     groups = {}
     for k in kept:
@@ -450,7 +480,67 @@ def apply_previous_seasons(result, config, loader=vcc.load_season_stats, sleep=t
             entry["previous_season_stats"] = prev
 
 
-def check_vcc_consistency(result, team_config, threshold=1.5):
+def keep_only_new_players(result, existing):
+    """Reduce ``result`` to signups that are not in ``existing`` yet.
+
+    Used by ``--keep-existing``: players already in players.json are left
+    untouched, so hand-entered values survive. Players are matched by discord
+    handle (or by name when a row has no discord). New players stacked with an
+    existing player join that player's group_id; other new stacks get group ids
+    above the highest existing one.
+
+    Args:
+        result: BuildResult from build_player_entries (modified in place).
+        existing: Current players.json content.
+
+    Returns:
+        Tuple (added names, stale names): the new players left in ``result``
+        and the existing players no longer found in the CSV (kept, warned).
+    """
+    def key(name, entry):
+        discord = (entry.get("discord") or "").strip().lower()
+        return f"discord:{discord}" if discord else f"name:{name.lower()}"
+
+    existing_keys = {key(n, e): n for n, e in existing.items()}
+    csv_keys = {key(n, e) for n, e in result.entries.items()}
+    stale = [n for k, n in existing_keys.items() if k not in csv_keys]
+    for name in stale:
+        result.warn(f"{name} is in players.json but not playing in the CSV; kept as is")
+
+    # CSV group id -> existing group id, through members already in players.json.
+    group_map = {}
+    for name, entry in result.entries.items():
+        old = existing_keys.get(key(name, entry))
+        if old is not None and entry["group_id"] is not None:
+            group_map.setdefault(entry["group_id"], existing[old].get("group_id"))
+    used = [e.get("group_id") for e in existing.values()]
+    next_id = max((g for g in used if isinstance(g, int)), default=0) + 1
+
+    added = {}
+    taken = {n.lower() for n in existing}
+    for name, entry in result.entries.items():
+        if key(name, entry) in existing_keys:
+            continue
+        gid = entry["group_id"]
+        if gid is not None:
+            if group_map.get(gid) is None:
+                group_map[gid] = next_id
+                next_id += 1
+            entry["group_id"] = group_map[gid]
+        new_name = name
+        if name.lower() in taken:
+            new_name = f"{name} ({entry.get('discord') or entry['signup_index']})"
+            result.warn(f"name '{name}' already in players.json, adding as '{new_name}'")
+        taken.add(new_name.lower())
+        added[name] = new_name
+
+    result.entries = {added[n]: e for n, e in result.entries.items() if n in added}
+    result.sources = {added[n]: s for n, s in result.sources.items() if n in added}
+    result.issues = {added[n]: i for n, i in result.issues.items() if n in added}
+    return list(result.entries), stale
+
+
+def check_vcc_consistency(result, team_config, threshold=1.5, pool_entries=None):
     """Warn when a hand-entered rank and the player's VCC history disagree.
 
     The rank is placed against this signup pool (standard deviations from the
@@ -462,16 +552,20 @@ def check_vcc_consistency(result, team_config, threshold=1.5):
         result: BuildResult after apply_previous_seasons.
         team_config: Team maker config (rank_values, distributions, weights).
         threshold: Minimum gap in standard deviations to warn about.
+        pool_entries: Players the rank is compared against (defaults to
+            ``result.entries``); only ``result.entries`` are flagged.
 
     Returns:
         List of (name, rank z, VCC z) for the flagged players.
     """
     rank_values = team_config.get("rank_values") or DEFAULT_RANK_VALUES
-    values = {
-        name: rank_values.get(e.get("current_rank"), 0)
-        for name, e in result.entries.items()
-    }
-    pool = [v for v in values.values() if v > 0]
+
+    def value(entry):
+        rank = scoring.canonical_rank(entry.get("current_rank"), rank_values)
+        return rank_values[rank] if rank else 0
+
+    values = {name: value(e) for name, e in result.entries.items()}
+    pool = [v for v in (value(e) for e in (pool_entries or result.entries).values()) if v > 0]
     if len(pool) < 5:
         return []
     mean = sum(pool) / len(pool)
@@ -499,68 +593,6 @@ def check_vcc_consistency(result, team_config, threshold=1.5):
     return flagged
 
 
-def load_overrides(path):
-    """Load overrides.yaml (empty dict if the file does not exist)."""
-    if not path or not os.path.exists(path):
-        return {}
-    with open(path, encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    if not isinstance(data, dict):
-        raise ValueError(f"{path}: expected a mapping of player -> fields")
-    return data
-
-
-def apply_overrides(result, overrides):
-    """Merge per-player overrides into the entries.
-
-    Overrides match the player name or discord handle case-insensitively.
-    Supported fields: ping, group_id, status (active/substitute/skip), role,
-    region. Unknown fields and unmatched players produce warnings.
-
-    Args:
-        result: BuildResult.
-        overrides: Mapping of player name or discord to a dict of fields.
-    """
-    lookup = {}
-    for name, entry in result.entries.items():
-        lookup[name.lower()] = name
-        if entry.get("discord"):
-            lookup.setdefault(entry["discord"].lower(), name)
-
-    for key, fields in overrides.items():
-        name = lookup.get(str(key).lower())
-        if name is None:
-            result.warn(f"override for '{key}' matches no player")
-            continue
-        if not isinstance(fields, dict):
-            result.warn(f"override for '{key}' must be a mapping, ignored")
-            continue
-        entry = result.entries[name]
-        for fname, value in fields.items():
-            if fname not in OVERRIDE_FIELDS:
-                result.warn(f"override for '{key}': unknown field '{fname}' ignored")
-            elif fname == "status":
-                if value not in OVERRIDE_STATUSES:
-                    result.warn(f"override for '{key}': bad status '{value}' ignored")
-                elif value == "skip":
-                    del result.entries[name]
-                    result.sources.pop(name, None)
-                    result.issues.pop(name, None)
-                    result.skipped["override skip"] += 1
-                    break
-                else:
-                    entry["status"] = value
-                    if value == "substitute":
-                        entry["group_id"] = None
-            elif fname == "role":
-                entry["role"] = parse_roles(value) if isinstance(value, str) else [
-                    str(r).strip().lower() for r in value
-                ]
-            else:
-                entry[fname] = value
-        print(f"  override applied: {name}")
-
-
 def build_missing(result):
     """Return the players_missing.json content: real reasons per player."""
     missing = {}
@@ -583,12 +615,12 @@ def group_size_counts(entries):
     return Counter(sizes.values())
 
 
-def print_summary(result, missing=None):
-    """Print the end-of-run summary."""
+def print_summary(result, missing=None, new_only=False):
+    """Print the end-of-run summary (of the new signups only with --keep-existing)."""
     entries = result.entries
     active = sum(1 for e in entries.values() if e["status"] == "active")
     subs = sum(1 for e in entries.values() if e["status"] == "substitute")
-    print("\n=== Summary ===")
+    print("\n=== Summary (new signups only) ===" if new_only else "\n=== Summary ===")
     print(f"CSV rows: {result.total_rows}")
     print(f"Players: {active} active, {subs} substitute")
     if result.skipped:
@@ -615,6 +647,12 @@ def main(argv=None):
         action="store_true",
         help="parse and check the CSV only: no VCC requests and nothing written",
     )
+    parser.add_argument(
+        "--keep-existing",
+        action="store_true",
+        help="leave the players already in players.json untouched and only add "
+        "new signups (keeps hand-entered values)",
+    )
     args = parser.parse_args(argv)
 
     config = load_config()
@@ -622,7 +660,6 @@ def main(argv=None):
     data_dir = os.path.join(BASE_DIR, "data", config.get("data_dir", "input"))
     output_path = os.path.join(BASE_DIR, "data", config.get("output", "players.json"))
     missing_path = output_path.replace(".json", "_missing.json")
-    overrides_path = os.path.join(BASE_DIR, "data", "overrides.yaml")
 
     csv_path = find_latest_csv(data_dir)
     print(f"CSV: {csv_path}\n")
@@ -630,17 +667,32 @@ def main(argv=None):
         rows = list(csv.DictReader(f))
 
     result = build_player_entries(rows, config, team_config.get("rank_values"))
+    existing = {}
+    if args.keep_existing and os.path.exists(output_path):
+        with open(output_path, encoding="utf-8") as f:
+            existing = json.load(f)
+        added, stale = keep_only_new_players(result, existing)
+        print(
+            f"\n--keep-existing: {len(existing)} player(s) in players.json kept as is, "
+            f"{len(added)} new signup(s) added"
+            + (f": {', '.join(added)}" if added else "")
+            + (f"; {len(stale)} no longer in the CSV (kept)" if stale else "")
+        )
+    elif args.keep_existing:
+        print(f"\n--keep-existing: {output_path} does not exist yet, writing it fresh")
     if not args.dry_run:
         apply_previous_seasons(result, config)
         check_vcc_consistency(
-            result, team_config, config.get("vcc_check_threshold", 1.5)
+            result,
+            team_config,
+            config.get("vcc_check_threshold", 1.5),
+            pool_entries={**existing, **result.entries},
         )
-    apply_overrides(result, load_overrides(overrides_path))
     missing = build_missing(result)
 
     if not args.dry_run:
         with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(result.entries, f, indent=2, ensure_ascii=False)
+            json.dump({**existing, **result.entries}, f, indent=2, ensure_ascii=False)
         if missing:
             with open(missing_path, "w", encoding="utf-8") as f:
                 json.dump(missing, f, indent=2, ensure_ascii=False)
@@ -649,7 +701,7 @@ def main(argv=None):
         print(f"\nDone. Output: {output_path}")
         if missing:
             print(f"Missing data for {len(missing)} player(s): {missing_path}")
-    print_summary(result, missing)
+    print_summary(result, missing, new_only=bool(existing))
 
 
 if __name__ == "__main__":

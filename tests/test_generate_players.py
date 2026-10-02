@@ -1,5 +1,7 @@
 """Tests for generate_players (synthetic data only)."""
 
+import json
+
 from teamMaker.core import generate_players as gp
 from teamMaker.core.utils.vcc import SeasonStats
 
@@ -57,6 +59,8 @@ def sample_rows():
         make_row("s5", "Hotel", status="Substitute"),
         make_row("s6", "India", status="Duplicate"),
         make_row("s7", "Juliet", status=""),
+        make_row("s8", "Kilo", status="Investigate"),
+        make_row("s9", "Lima", status="Pending Rating"),
     ]
 
 
@@ -66,7 +70,11 @@ def sample_rows():
 def test_build_entries_groups_and_status():
     result = gp.build_player_entries(sample_rows(), CONFIG)
     e = result.entries
-    assert set(e) == {"Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Hotel"}
+    # Only Denied and Investigate stay out; any other status plays.
+    assert set(e) == {
+        "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Hotel",
+        "India", "Juliet", "Lima",
+    }
     assert e["Alpha"]["group_id"] == 1
     assert e["Bravo"]["group_id"] == e["Charlie"]["group_id"] == 2
     assert e["Delta"]["group_id"] == e["Echo"]["group_id"] == e["Foxtrot"]["group_id"] == 3
@@ -74,7 +82,7 @@ def test_build_entries_groups_and_status():
     assert e["Hotel"]["status"] == "substitute"
     assert e["Alpha"]["status"] == "active"
     assert all(isinstance(v["group_id"], (int, type(None))) for v in e.values())
-    assert result.skipped == {"Denied": 1, "Duplicate": 1, "(blank)": 1}
+    assert result.skipped == {"Denied": 1, "Investigate": 1}
     assert result.warnings == []
 
 
@@ -98,7 +106,7 @@ def test_entry_fields_emitted():
 
 def test_group_size_counts():
     result = gp.build_player_entries(sample_rows(), CONFIG)
-    assert dict(gp.group_size_counts(result.entries)) == {1: 1, 2: 1, 3: 1}
+    assert dict(gp.group_size_counts(result.entries)) == {1: 4, 2: 1, 3: 1}
 
 
 def test_group_override_column_merges_submissions():
@@ -354,57 +362,93 @@ def test_returning_without_profile_is_recorded():
     assert "VCC profile" in result.issues["Alpha"][0][1]
 
 
-# --- overrides ---------------------------------------------------------
-
-
-def test_overrides_merge():
-    rows = [make_row("s1", "Alpha"), make_row("s2", "Bravo"), make_row("s3", "Charlie")]
-    result = gp.build_player_entries(rows, CONFIG)
-    overrides = {
-        "alpha": {"ping": 42, "region": "NA", "role": "smokes, sentinel"},
-        "bravo_dc": {"status": "substitute"},
-        "Charlie": {"status": "skip"},
-        "Nobody": {"ping": 1},
-        "Alpha ": {"bogus": 1},
-    }
-    gp.apply_overrides(result, overrides)
-    assert result.entries["Alpha"]["ping"] == 42
-    assert result.entries["Alpha"]["region"] == "NA"
-    assert result.entries["Alpha"]["role"] == ["smokes", "sentinel"]
-    assert result.entries["Bravo"]["status"] == "substitute"
-    assert result.entries["Bravo"]["group_id"] is None
-    assert "Charlie" not in result.entries
-    assert any("matches no player" in w for w in result.warnings)
-
-
-def test_overrides_bad_field_warns():
-    result = gp.build_player_entries([make_row("s1", "Alpha")], CONFIG)
-    gp.apply_overrides(result, {"Alpha": {"bogus": 1, "status": "maybe"}})
-    assert sum("Alpha" in w for w in result.warnings) == 2
-
-
-def test_load_overrides_missing_file(tmp_path):
-    assert gp.load_overrides(str(tmp_path / "nope.yaml")) == {}
-
-
-def test_load_overrides_file(tmp_path):
-    path = tmp_path / "o.yaml"
-    path.write_text("Alpha:\n  ping: 50\n", encoding="utf-8")
-    assert gp.load_overrides(str(path)) == {"Alpha": {"ping": 50}}
-
-
-def test_example_overrides_file_parses():
-    import os
-
-    path = os.path.join(gp.BASE_DIR, "data", "overrides.example.yaml")
-    data = gp.load_overrides(path)
-    assert data and all(isinstance(v, dict) for v in data.values())
-    for fields in data.values():
-        assert set(fields) <= set(gp.OVERRIDE_FIELDS)
-
-
-def test_missing_only_lists_players_still_present():
+def test_missing_lists_players_with_problems():
     result = gp.build_player_entries([make_row("s1", "Alpha", tracker_current="")], CONFIG)
-    assert "Alpha" in result.issues
-    gp.apply_overrides(result, {"Alpha": {"status": "skip"}})
-    assert gp.build_missing(result) == {}
+    assert set(gp.build_missing(result)) == {"Alpha"}
+
+
+def test_ping_column():
+    rows = [
+        make_row("s1", "Alpha", ping="45"),
+        make_row("s2", "Bravo"),
+        make_row("s3", "Charlie", ping="fast"),
+        make_row("s4", "Delta", ping="9999"),
+    ]
+    result = gp.build_player_entries(rows, CONFIG)
+    e = result.entries
+    assert e["Alpha"]["ping"] == 45
+    assert e["Bravo"]["ping"] is None  # scoring falls back to the region estimate
+    assert e["Charlie"]["ping"] is None and e["Delta"]["ping"] is None
+    w = " | ".join(result.warnings)
+    assert "ping 'fast' is not a number" in w and "ping 9999 is outside" in w
+
+
+def test_repeat_signup_keeps_the_latest():
+    rows = [
+        make_row("old", "Tacc", stack="Duo", roles="Duelist, Controller", discord="mrtacc"),
+        make_row("old", "Manny", stack="Duo", discord="manny08"),
+        make_row("s2", "Solo1"),
+        make_row("new", "Manny", stack="Duo", discord="MANNY08"),
+        make_row("new", "Tacc", stack="Duo", roles="Duelist, Initiator", discord="mrtacc"),
+    ]
+    result = gp.build_player_entries(rows, CONFIG)
+    e = result.entries
+    assert set(e) == {"Tacc", "Manny", "Solo1"}  # no "(discord)" collision names
+    assert e["Tacc"]["role"] == ["duelist", "initiator"]
+    assert e["Tacc"]["submission_id"] == e["Manny"]["submission_id"] == "new"
+    assert e["Tacc"]["group_id"] == e["Manny"]["group_id"]
+    assert result.skipped["older duplicate signup"] == 2
+    assert sum("signed up more than once" in w for w in result.warnings) == 2
+    assert not any("stack declared" in w for w in result.warnings)
+
+
+# --- --keep-existing -------------------------------------------------------
+
+
+def test_keep_only_new_players():
+    existing = {
+        "Alpha": {"discord": "alpha_dc", "group_id": 7, "current_rank": "immortal 1",
+                  "tracker_current": 999, "status": "active"},
+        "Zed": {"discord": "zed_dc", "group_id": 9, "status": "active"},
+        "Echo": {"discord": "someone_else", "group_id": 3, "status": "active"},
+    }
+    rows = [
+        make_row("s1", "Alpha", stack="Duo"),
+        make_row("s1", "Bravo", stack="Duo"),  # stacked with existing Alpha
+        make_row("s2", "Charlie", stack="Duo"),
+        make_row("s2", "Delta", stack="Duo"),
+        make_row("s3", "Echo"),  # same name as an existing player, other discord
+        make_row("s4", "Hotel", status="Substitute"),
+    ]
+    result = gp.build_player_entries(rows, CONFIG)
+    added, stale = gp.keep_only_new_players(result, existing)
+    e = result.entries
+    assert sorted(added) == ["Bravo", "Charlie", "Delta", "Echo (echo_dc)", "Hotel"]
+    assert "Alpha" not in e  # hand-entered entry left alone
+    assert e["Bravo"]["group_id"] == 7  # joins Alpha's stack
+    assert e["Charlie"]["group_id"] == e["Delta"]["group_id"] == 10  # above max 9
+    assert e["Echo (echo_dc)"]["group_id"] == 11
+    assert e["Hotel"]["group_id"] is None
+    assert stale == ["Zed", "Echo"]
+    assert any("Zed is in players.json" in w for w in result.warnings)
+    assert set(result.sources) == set(e)
+
+
+def test_keep_existing_writes_merged_file(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    (data / "input").mkdir(parents=True)
+    rows = [make_row("s1", "Alpha"), make_row("s2", "Bravo")]
+    with open(data / "input" / "signups.csv", "w", newline="", encoding="utf-8") as f:
+        import csv
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    hand = {"Alpha": {"discord": "alpha_dc", "group_id": 1, "tracker_current": 999}}
+    (data / "players.json").write_text(json.dumps(hand), encoding="utf-8")
+    monkeypatch.setattr(gp, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(gp, "load_config", lambda: CONFIG)
+    monkeypatch.setattr(gp, "apply_previous_seasons", lambda result, config: None)
+    gp.main(["--keep-existing"])
+    out = json.loads((data / "players.json").read_text(encoding="utf-8"))
+    assert out["Alpha"] == hand["Alpha"]
+    assert out["Bravo"]["group_id"] == 2 and out["Bravo"]["tracker_current"] == 500

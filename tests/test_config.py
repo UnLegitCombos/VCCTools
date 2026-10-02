@@ -7,6 +7,7 @@ import pytest
 
 from teamMaker.core.config import (
     DEFAULTS,
+    TIGHTER_PROFILE,
     deep_merge,
     load_team_config,
     load_yaml,
@@ -168,10 +169,18 @@ def test_shipped_configs_load_without_warnings():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         example = load_team_config(os.path.join(CONFIG_DIR, "config.example.yaml"))
-        tighter = load_team_config(os.path.join(CONFIG_DIR, "config_tighter_teams.yaml"))
+        tighter = load_team_config(
+            os.path.join(CONFIG_DIR, "config.example.yaml"), profile=TIGHTER_PROFILE
+        )
     assert example["rank_values"]["Immortal 3"] == 27
     assert example["top_tier_compression"]["enabled"] is False
     assert example["latest_season_available"] == "auto"
-    assert tighter["random_seed"] == 12
+    # The profile only changes optimizer settings; seed and scoring stay.
+    assert tighter["optimizer"]["target_range"] == 0.05
+    assert tighter["optimizer"]["time_limit_s"] == 300
+    assert tighter["optimizer"]["iterations"] == example["optimizer"]["iterations"]
+    assert tighter["random_seed"] == example["random_seed"]
     assert tighter["weight_current"] == example["weight_current"]
-    assert os.path.basename(tighter["_sources"][0]) == "config.example.yaml"
+    assert [os.path.basename(p) for p in tighter["_sources"]] == [
+        "config.example.yaml", TIGHTER_PROFILE,
+    ]

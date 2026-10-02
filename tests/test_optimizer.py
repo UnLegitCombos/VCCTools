@@ -306,3 +306,14 @@ def test_fixed_teams_are_not_optimized():
     assert len(result.teams) == 2
     fixed_names = {n for f in build.fixed for n in f.names}
     assert not fixed_names & {n for t in result.teams for u in t for n in u.names}
+
+
+def test_auto_cluster_cap_with_na_server_is_one_group():
+    config = _config()
+    config["groups"] = {
+        "count": 3,
+        "servers": ["Frankfurt", "Frankfurt", "Frankfurt"],
+        "sizes": "auto",
+        "na_server": "London",
+    }
+    assert opt.auto_cluster_cap(config, 20) == 7  # sizes 7, 7, 6

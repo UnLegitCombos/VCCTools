@@ -39,9 +39,15 @@ def make_teams_doc(n_teams, na_counts=None, seed=0, spread=1.0, generated_at="t0
     return {"schema_version": 1, "meta": {"generated_at": generated_at}, "teams": teams}
 
 
+# Fixed servers (na_server off): the layout most tests below were written for.
+FIXED = {"na_server": None, "servers": ["London", "Frankfurt", "Frankfurt"]}
+# The default: every group on Frankfurt, a mostly-NA group may move to London.
+DYNAMIC = {"na_server": "London", "servers": ["Frankfurt", "Frankfurt", "Frankfurt"]}
+
+
 def make_settings(**overrides):
     """GroupSettings with test-friendly defaults (fast optimizer)."""
-    config = {"groups": dict(GROUPS_DEFAULTS, iterations=20000, restarts=2, **overrides)}
+    config = {"groups": dict(GROUPS_DEFAULTS, iterations=20000, restarts=2, **{**FIXED, **overrides})}
     return mg.GroupSettings.from_config(config)
 
 
@@ -52,7 +58,8 @@ def write_teams(tmp_path, doc):
 
 
 def run_groups(tmp_path, doc, **overrides):
-    config = {"groups": dict(GROUPS_DEFAULTS, iterations=20000, restarts=2, **overrides), "random_seed": 5}
+    groups = dict(GROUPS_DEFAULTS, iterations=20000, restarts=2, **{**FIXED, **overrides})
+    config = {"groups": groups, "random_seed": 5}
     return mg.run(
         config=config, teams_path=write_teams(tmp_path, doc), out_dir=str(tmp_path), render=False
     )
@@ -230,3 +237,62 @@ def test_seed_reproducible():
     a = mg.optimize_groups(scores, costs, [6, 6, 6], settings, {}, seed=7)
     b = mg.optimize_groups(scores, costs, [6, 6, 6], settings, {}, seed=7)
     assert a == b
+
+
+# --- default: Frankfurt, a mostly-NA group may move to London --------------
+
+
+def test_defaults_are_frankfurt_with_london_switch():
+    assert GROUPS_DEFAULTS["servers"] == ["Frankfurt", "Frankfurt", "Frankfurt"]
+    assert GROUPS_DEFAULTS["na_server"] == "London"
+
+
+def test_all_eu_stays_on_frankfurt(tmp_path):
+    out, _ = run_groups(tmp_path, make_teams_doc(18, spread=8.0), **DYNAMIC)
+    assert [g["server"] for g in out["groups"]] == ["Frankfurt"] * 3
+    assert out["summary"]["range"] < 0.5
+
+
+def test_few_na_players_stay_on_frankfurt(tmp_path):
+    # Two NA players in 90 cannot make any group mostly NA.
+    out, _ = run_groups(tmp_path, make_teams_doc(18, na_counts={2: 1, 9: 1}), **DYNAMIC)
+    assert [g["server"] for g in out["groups"]] == ["Frankfurt"] * 3
+
+
+def test_enough_na_teams_get_a_london_group(tmp_path):
+    na = {1: 5, 5: 5, 9: 5, 13: 4}  # 19 NA players: enough for a 30-player group
+    out, text = run_groups(tmp_path, make_teams_doc(18, na_counts=na, spread=1.0), **DYNAMIC)
+    servers = [g["server"] for g in out["groups"]]
+    assert servers.count("London") == 1
+    london = out["groups"][servers.index("London")]
+    assert set(na) <= set(london["team_ids"])
+    assert london["regions"]["NA"] * 2 >= sum(london["regions"].values())
+    assert out["summary"]["range"] <= 2.0 + 1.0  # balanced spread + tolerance
+
+
+def test_london_never_costs_more_balance_than_the_tolerance(tmp_path):
+    # Both NA teams (3 NA players each) are far stronger than the rest. Only
+    # putting both in one group makes it mostly NA, which would wreck the
+    # balance, so everyone stays on Frankfurt with the balanced split.
+    doc = make_teams_doc(6, na_counts={1: 3, 2: 3})
+    for t in doc["teams"]:
+        t["team_score"] = 200.0 if t["id"] in (1, 2) else 100.0
+    out, _ = run_groups(tmp_path, doc, **DYNAMIC)
+    assert [g["server"] for g in out["groups"]] == ["Frankfurt"] * 3
+    by_team = {t: g["index"] for g in out["groups"] for t in g["team_ids"]}
+    assert by_team[1] != by_team[2]
+
+
+def test_manual_groups_use_the_majority_rule(tmp_path):
+    doc = make_teams_doc(6, na_counts={3: 5, 4: 3})
+    manual = [[1, 2], [3, 4], [5, 6]]
+    out, _ = run_groups(tmp_path, doc, mode="manual", manual=manual, **DYNAMIC)
+    assert [g["server"] for g in out["groups"]] == ["Frankfurt", "London", "Frankfurt"]
+
+
+def test_choose_servers_needs_the_minimum_share():
+    settings = make_settings(**DYNAMIC, na_server_min_share=0.6)
+    teams = {1: {"regions": {"NA": 3, "EU": 2}}, 2: {"regions": {"EU": 5}}}
+    assert mg.choose_servers([[1], [2]], teams, settings)[:2] == ["London", "Frankfurt"]
+    teams[1]["regions"] = {"NA": 2, "EU": 3}
+    assert mg.choose_servers([[1], [2]], teams, settings)[:2] == ["Frankfurt", "Frankfurt"]

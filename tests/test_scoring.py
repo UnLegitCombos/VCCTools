@@ -67,11 +67,38 @@ def test_parse_peak_act_episode_acts_stay_three():
     assert parse_peak_act("E10A1", 26, 5) == 0
 
 
-def test_peak_act_bonus_uses_acts_per_season():
+def test_peak_act_age_uses_acts_per_season():
     cfg = make_config(use_returning_player_stats=False, use_ping_adjustment=False)
     player = make_player(peak_rank_act="E7A3")
     detail = compute_player_score_detailed(player, cfg)
     assert detail["advanced_components"]["peak_act"]["acts_ago"] == 11 + 6
+
+
+def test_old_peak_fades_toward_current_rank():
+    cfg = make_config(
+        use_returning_player_stats=False, use_ping_adjustment=False, use_tracker=False,
+        current_season=26, current_act=5, acts_per_season=6, peak_act_decay_rate=0.9,
+    )
+    def peak_value(**kw):
+        d = compute_player_score_detailed(make_player(**kw), cfg)
+        return d["rank_components"]["peak_rank_value"], d["final_score"]
+    cur = cfg["rank_values"]["Diamond 3"]
+    peak = cfg["rank_values"]["Immortal 3"]
+    fresh, fresh_score = peak_value(current_rank="Diamond 3", peak_rank="Immortal 3", peak_rank_act="S26A5")
+    old, old_score = peak_value(current_rank="Diamond 3", peak_rank="Immortal 3", peak_rank_act="S25A5")
+    no_act, _ = peak_value(current_rank="Diamond 3", peak_rank="Immortal 3")
+    assert fresh == peak and no_act == peak  # this act / unknown act: full peak
+    assert old == pytest.approx(cur + (peak - cur) * 0.9 ** 6)  # 6 acts ago
+    assert old_score < fresh_score  # older peak counts less, never a bonus
+    # A peak at or below the current rank is untouched.
+    same, _ = peak_value(current_rank="Immortal 3", peak_rank="Immortal 3", peak_rank_act="E6A3")
+    assert same == peak
+
+
+def test_removed_peak_act_keys_warn():
+    from teamMaker.core.config import DEPRECATED_KEYS
+    for key in ("peak_act_max_episode", "peak_act_max_act", "weight_peak_act"):
+        assert key in DEPRECATED_KEYS
 
 
 # --- regions --------------------------------------------------------------
@@ -290,3 +317,14 @@ def test_missing_peak_rank_counts_as_current():
         with_peak["rank_components"]["current_rank_value"]
     )
     assert no_peak["final_score"] == pytest.approx(with_peak["final_score"])
+
+
+def test_rank_lookup_ignores_case_and_spaces():
+    values = {"Diamond 1": 16, "Diamond 2": 17, "Immortal 3": 27, "Radiant": 30}
+    assert scoring.rank_to_numeric("diamond 1", values) == 16
+    assert scoring.rank_to_numeric("  DIAMOND   1 ", values) == 16
+    assert scoring.rank_to_numeric("diamond", values) == 17
+    cfg = {"rr_granularity_ranks": ["Immortal 3", "Radiant"], "rr_bonus_cap": 2.0}
+    assert rank_to_numeric_with_rr("immortal 3", values, 150, cfg) == 28.5
+    with pytest.warns(UserWarning):
+        assert scoring.rank_to_numeric("Plat 2", values) == 0

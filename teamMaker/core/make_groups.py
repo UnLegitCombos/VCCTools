@@ -1,8 +1,17 @@
 """Split the teams of ``output/teams.json`` into groups (pools).
 
-Goal: put as many region-costly teams (for example NA players) into the group
-whose server suits them (for example London), then balance strength across the
-groups. The energy minimised is::
+Every group plays on its default server (``groups.servers``, Frankfurt by
+default). When ``groups.na_server`` is set (London by default), auto mode runs
+twice:
+
+1. balance only: the most even split of team strength;
+2. gather NA teams into group 1 on ``na_server``, allowing the spread of group
+   means to grow by at most ``na_balance_tolerance`` points over step 1.
+
+A group whose players are at least ``na_server_min_share`` NA plays on
+``na_server``; if step 2 cannot produce one, the balanced split of step 1 is
+kept. With ``na_server: null`` the servers are fixed as listed. The energy
+minimised in each run is::
 
     sum(region cost of each team on its group's server)
     + balance_weight * range(group mean team score)
@@ -25,7 +34,7 @@ import os
 import random
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from teamMaker.core import anneal
 from teamMaker.core.config import BASE_DIR, GROUPS_DEFAULTS, load_team_config, resolve_seed
@@ -46,7 +55,7 @@ class GroupSettings:
     """Settings of the ``groups:`` config block."""
 
     count: int = 3
-    servers: list = field(default_factory=lambda: ["London", "Frankfurt", "Frankfurt"])
+    servers: list = field(default_factory=lambda: ["Frankfurt", "Frankfurt", "Frankfurt"])
     sizes: object = "auto"
     region_server_cost: dict = field(default_factory=dict)
     balance_weight: float = 1.0
@@ -58,6 +67,10 @@ class GroupSettings:
     restarts: int = 4
     title: str = "VCC Groups"
     priority_region: str = "NA"
+    na_server: object = "London"
+    na_server_min_share: float = 0.5
+    na_balance_tolerance: float = 1.0
+    max_range: object = None  # internal: hard cap on the spread of group means
 
     @classmethod
     def from_config(cls, config):
@@ -92,6 +105,9 @@ class GroupSettings:
                 restarts=int(block["restarts"]),
                 title=str(block["title"]),
                 priority_region=str(cluster[0]).upper(),
+                na_server=str(block["na_server"]) if block.get("na_server") else None,
+                na_server_min_share=float(block["na_server_min_share"]),
+                na_balance_tolerance=float(block["na_balance_tolerance"]),
             )
         except (TypeError, ValueError, KeyError) as exc:
             raise GroupsError(f"Invalid groups config: {exc}") from exc
@@ -226,14 +242,20 @@ def validate_pins(pinned, team_ids, sizes):
 # ---------------------------------------------------------------------------
 
 
-def _balance(means, balance_weight, std_weight):
-    """Return the balance part of the energy for a list of group means."""
+def _balance(means, balance_weight, std_weight, max_range=None):
+    """Return the balance part of the energy for a list of group means.
+
+    With ``max_range``, a spread above it costs 1000 per point, so the search
+    stays within it whenever possible.
+    """
     g = len(means)
     if g < 2:
         return 0.0
     mean = sum(means) / g
     std = math.sqrt(sum((m - mean) ** 2 for m in means) / g)
-    return balance_weight * (max(means) - min(means)) + std_weight * std
+    spread = max(means) - min(means)
+    over = 0.0 if max_range is None else max(0.0, spread - max_range) * 1000.0
+    return balance_weight * spread + std_weight * std + over
 
 
 def assignment_energy(assign, scores, costs, sizes, settings):
@@ -255,7 +277,9 @@ def assignment_energy(assign, scores, costs, sizes, settings):
         sums[g] += scores[t]
         cost += costs[t][g]
     means = [sums[g] / sizes[g] for g in range(len(sizes))]
-    return cost + _balance(means, settings.balance_weight, settings.std_weight)
+    return cost + _balance(
+        means, settings.balance_weight, settings.std_weight, settings.max_range
+    )
 
 
 class GroupProblem:
@@ -307,7 +331,10 @@ class GroupProblem:
 
     def _energy(self, sums, cost):
         means = [sums[g] / self.sizes[g] for g in range(len(sums))]
-        return cost + _balance(means, self.settings.balance_weight, self.settings.std_weight)
+        return cost + _balance(
+            means, self.settings.balance_weight, self.settings.std_weight,
+            self.settings.max_range,
+        )
 
     def can_move(self):
         """Return True if at least one swap is possible."""
@@ -399,6 +426,93 @@ def optimize_groups(scores, costs, sizes, settings, pins, seed, iterations=None,
         if not problem.can_move():
             break
     return best_assign, best_energy
+
+
+def group_spread(assign, scores, sizes):
+    """Range of the group mean team scores for an assignment."""
+    sums = [0.0] * len(sizes)
+    for t, g in enumerate(assign):
+        sums[g] += scores[t]
+    means = [sums[g] / sizes[g] for g in range(len(sizes))]
+    return max(means) - min(means)
+
+
+def choose_servers(groups, teams_by_id, settings):
+    """Pick each group's server.
+
+    Every group plays on its ``servers`` entry, except the group with the
+    highest share of priority-region (NA) players, which moves to
+    ``na_server`` when that share is at least ``na_server_min_share``.
+
+    Args:
+        groups: List of lists of team ids.
+        teams_by_id: {team id: team dict} (``regions`` counts are used).
+        settings: GroupSettings.
+
+    Returns:
+        List of server names, one per group.
+    """
+    servers = list(settings.servers)
+    if not settings.na_server:
+        return servers
+    priority = settings.priority_region
+    best, best_share = None, 0.0
+    for gi, ids in enumerate(groups):
+        total = na = 0
+        for t in ids:
+            for region, n in (teams_by_id[t].get("regions") or {}).items():
+                total += n
+                if str(region).upper() == priority:
+                    na += n
+        share = na / total if total else 0.0
+        if na and share > best_share:
+            best, best_share = gi, share
+    if best is not None and best_share >= settings.na_server_min_share - 1e-9:
+        servers[best] = settings.na_server
+    return servers
+
+
+def optimize_with_na_server(teams, sizes, settings, pins, seed):
+    """Auto mode with ``na_server``: balanced split, then try an NA group.
+
+    Args:
+        teams: Team dicts in position order.
+        sizes: Group sizes.
+        settings: GroupSettings (``na_server`` set).
+        pins: {team position: group index (0-based)}.
+        seed: Integer seed.
+
+    Returns:
+        Tuple (assign, energy, servers).
+    """
+    scores = [float(t["team_score"]) for t in teams]
+    by_pos = dict(enumerate(teams))
+    zero = [[0.0] * len(sizes) for _ in teams]
+    balanced, energy = optimize_groups(scores, zero, sizes, settings, pins, seed)
+
+    def as_groups(assign):
+        groups = [[] for _ in sizes]
+        for pos, g in enumerate(assign):
+            groups[g].append(pos)
+        return groups
+
+    has_priority = any(
+        str(r).upper() == settings.priority_region
+        for t in teams for r in (t.get("regions") or {})
+    )
+    if has_priority:
+        trial = replace(
+            settings,
+            servers=[settings.na_server] + list(settings.servers[1:]),
+            max_range=group_spread(balanced, scores, sizes) + settings.na_balance_tolerance,
+        )
+        gathered, trial_energy = optimize_groups(
+            scores, team_server_costs(teams, trial), sizes, trial, pins, seed
+        )
+        servers = choose_servers(as_groups(gathered), by_pos, settings)
+        if settings.na_server in servers:
+            return gathered, trial_energy, servers
+    return balanced, energy, choose_servers(as_groups(balanced), by_pos, settings)
 
 
 # ---------------------------------------------------------------------------
@@ -566,6 +680,9 @@ def build_groups_doc(teams_doc, groups, settings, seed, mode, energy=None):
         "balance_weight": settings.balance_weight,
         "std_weight": settings.std_weight,
         "region_server_cost": settings.region_server_cost,
+        "na_server": settings.na_server,
+        "na_server_min_share": settings.na_server_min_share,
+        "na_balance_tolerance": settings.na_balance_tolerance,
         "pinned": {str(k): v for k, v in settings.pinned.items()},
     }
     return {
@@ -655,15 +772,20 @@ def run(config=None, teams_path=None, out_dir=None, render=True):
         sizes = resolve_sizes(len(teams), settings)
         validate_pins(settings.pinned, team_ids, sizes)
         pins = {pos_of[t]: g - 1 for t, g in settings.pinned.items()}
-        scores = [float(t["team_score"]) for t in teams]
-        costs = team_server_costs(teams, settings)
-        assign, energy = optimize_groups(scores, costs, sizes, settings, pins, seed)
+        if settings.na_server:
+            assign, energy, _ = optimize_with_na_server(teams, sizes, settings, pins, seed)
+        else:
+            scores = [float(t["team_score"]) for t in teams]
+            costs = team_server_costs(teams, settings)
+            assign, energy = optimize_groups(scores, costs, sizes, settings, pins, seed)
         assert assign is not None
         groups = [[] for _ in sizes]
         for pos, g in enumerate(assign):
             groups[g].append(team_ids[pos])
 
-    doc = build_groups_doc(teams_doc, groups, settings, seed, settings.mode, energy)
+    by_id = {int(t["id"]): t for t in teams}
+    final = replace(settings, servers=choose_servers(groups, by_id, settings))
+    doc = build_groups_doc(teams_doc, groups, final, seed, settings.mode, energy)
     text = format_groups(doc, teams_doc)
 
     os.makedirs(out_dir, exist_ok=True)

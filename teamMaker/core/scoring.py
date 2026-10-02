@@ -7,7 +7,7 @@ import time
 import re
 import warnings
 
-from teamMaker.core.config import load_team_config
+from teamMaker.core.config import DEFAULTS, load_team_config
 
 # Global cache for season distributions loaded from file (Bug Fix #5)
 _SEASON_DISTRIBUTIONS_CACHE = None
@@ -65,24 +65,36 @@ def _reset_caches():
     _WARNED_SEASONS.clear()
 
 
+def canonical_rank(rank_str, rank_values):
+    """Return the rank_values key for a rank string, or None if unknown.
+
+    Case and extra spaces are ignored ("diamond  1" -> "Diamond 1"), and a
+    bare tier from signup CSVs ("Gold") maps to the middle division.
+    """
+    text = " ".join(str(rank_str or "").split()).lower()
+    if not text:
+        return None
+    lookup = {k.lower(): k for k in rank_values}
+    return lookup.get(text) or lookup.get(f"{text} 2")
+
+
 def rank_to_numeric(rank_str, rank_values):
     """Convert rank string to numeric value.
 
     Args:
-        rank_str: Rank string (e.g., "Diamond 2")
+        rank_str: Rank string (e.g., "Diamond 2"; case-insensitive)
         rank_values: Dict mapping rank strings to numeric values
 
     Returns:
         Numeric value for the rank, or 0 if not found
     """
-    result = rank_values.get(rank_str, 0)
-    if result == 0 and rank_str and rank_str.strip():
-        # Signup CSVs give a bare tier ("Gold"): use the middle division.
-        result = rank_values.get(f"{rank_str.strip()} 2", 0)
-    # Bug Fix #4: Warn when unknown rank encountered
-    if result == 0 and rank_str and rank_str.strip():
-        warnings.warn(f"Unknown rank encountered: '{rank_str}'", UserWarning)
-    return result
+    rank = canonical_rank(rank_str, rank_values)
+    if rank is None:
+        # Bug Fix #4: Warn when unknown rank encountered
+        if rank_str and str(rank_str).strip():
+            warnings.warn(f"Unknown rank encountered: '{rank_str}'", UserWarning)
+        return 0
+    return rank_values[rank]
 
 
 def rank_to_numeric_with_rr(rank_str, rank_values, rr_value=None, config=None):
@@ -106,6 +118,7 @@ def rank_to_numeric_with_rr(rank_str, rank_values, rr_value=None, config=None):
     """
     config = config or {}
     base_value = rank_to_numeric(rank_str, rank_values)
+    rank_str = canonical_rank(rank_str, rank_values)
 
     if rr_value is None or rr_value < 0:
         return base_value
@@ -113,9 +126,9 @@ def rank_to_numeric_with_rr(rank_str, rank_values, rr_value=None, config=None):
         return base_value
 
     if rank_str == "Radiant":
-        threshold = config.get("radiant_rr_threshold", 550)
+        threshold = config.get("radiant_rr_threshold", DEFAULTS["radiant_rr_threshold"])
         return base_value + max(0.0, (rr_value - threshold) / 100.0)
-    return base_value + min(config.get("rr_bonus_cap", 2.0), rr_value / 100.0)
+    return base_value + min(config.get("rr_bonus_cap", DEFAULTS["rr_bonus_cap"]), rr_value / 100.0)
 
 
 def parse_peak_act(peak_act_str, current_season=26, current_act=5, acts_per_season=6):
@@ -191,7 +204,7 @@ def calculate_peak_act_weight(acts_ago, decay_rate):
         decay_rate: Decay rate per act (e.g., 0.9)
 
     Returns:
-        Weight multiplier for the peak act bonus
+        Share of the peak's lead over the current rank that still counts
     """
     return decay_rate**acts_ago
 
@@ -270,7 +283,7 @@ def calculate_ping_adjustment(ping, config):
     )
 
     result = {
-        "enabled": config.get("use_ping_adjustment", False),
+        "enabled": config.get("use_ping_adjustment", DEFAULTS["use_ping_adjustment"]),
         "ping": ping,
         "multiplier": 1.0,
         "penalty_percent": 0.0,
@@ -331,7 +344,7 @@ def _latest_season_available(config):
     Returns:
         Season number as an int
     """
-    value = config.get("latest_season_available", "auto")
+    value = config.get("latest_season_available", DEFAULTS["latest_season_available"])
     if isinstance(value, str) and value.strip().lower() == "auto":
         seasons = [season_number(k) for k in _get_season_distributions(config)]
         return max(seasons) if seasons else 0
@@ -348,7 +361,7 @@ def calculate_previous_season_score(player_info, config):
     Returns:
         Previous season score component (0 if not applicable)
     """
-    if not config.get("use_returning_player_stats", False):
+    if not config.get("use_returning_player_stats", DEFAULTS["use_returning_player_stats"]):
         return 0.0
     if not player_info.get("is_returning_player", False):
         return 0.0
@@ -502,7 +515,7 @@ def compute_player_score_detailed(player_info, config):
     Returns:
         Dictionary with detailed breakdown of score components
     """
-    mode = config.get("mode", "basic")
+    mode = config.get("mode", DEFAULTS["mode"])
     rank_values = config.get("rank_values", {})
 
     # Extract RR values for Immortal 3+ granularity
@@ -510,7 +523,7 @@ def compute_player_score_detailed(player_info, config):
     peak_rr = player_info.get("peak_rr")
 
     # Use RR granularity if enabled and RR available
-    use_rr = config.get("use_immortal_rr_granularity", False)
+    use_rr = config.get("use_immortal_rr_granularity", DEFAULTS["use_immortal_rr_granularity"])
 
     if use_rr:
         current_val = rank_to_numeric_with_rr(
@@ -528,15 +541,40 @@ def compute_player_score_detailed(player_info, config):
     if not player_info.get("peak_rank"):
         peak_val = current_val
 
+    # Older peaks count less: a peak above the current rank fades toward the
+    # current rank by peak_act_decay_rate per act since peak_rank_act.
+    peak_fade = {"enabled": False}
+    if config.get("use_peak_act", DEFAULTS["use_peak_act"]) and player_info.get("peak_rank_act"):
+        acts_ago = parse_peak_act(
+            str(player_info["peak_rank_act"]).upper().strip(),
+            config.get("current_season", DEFAULTS["current_season"]),
+            config.get("current_act", DEFAULTS["current_act"]),
+            config.get("acts_per_season", DEFAULTS["acts_per_season"]),
+        )
+        weight = calculate_peak_act_weight(
+            acts_ago, config.get("peak_act_decay_rate", DEFAULTS["peak_act_decay_rate"])
+        )
+        raw_peak = peak_val
+        if peak_val > current_val:
+            peak_val = current_val + (peak_val - current_val) * weight
+        peak_fade = {
+            "enabled": True,
+            "peak_rank_act": player_info["peak_rank_act"],
+            "acts_ago": acts_ago,
+            "weight": weight,
+            "peak_value_before_fade": raw_peak,
+            "peak_value_after_fade": peak_val,
+        }
+
     breakdown = {
         "mode": mode,
         "rank_components": {
             "current_rank": player_info.get("current_rank"),
             "current_rank_value": current_val,
-            "current_rank_weighted": config.get("weight_current", 0.8) * current_val,
+            "current_rank_weighted": config.get("weight_current", DEFAULTS["weight_current"]) * current_val,
             "peak_rank": player_info.get("peak_rank"),
             "peak_rank_value": peak_val,
-            "peak_rank_weighted": config.get("weight_peak", 0.2) * peak_val,
+            "peak_rank_weighted": config.get("weight_peak", DEFAULTS["weight_peak"]) * peak_val,
         },
         "tracker_components": {},
         "advanced_components": {},
@@ -550,20 +588,20 @@ def compute_player_score_detailed(player_info, config):
         breakdown["rank_components"]["peak_rr"] = peak_rr
 
     current_score = (
-            config.get("weight_current", 0.8) * current_val
-            + config.get("weight_peak", 0.2) * peak_val
+            config.get("weight_current", DEFAULTS["weight_current"]) * current_val
+            + config.get("weight_peak", DEFAULTS["weight_peak"]) * peak_val
     )
     breakdown["base_score"] = current_score
 
     # Tracker (both modes) if enabled
-    if config.get("use_tracker", False):
+    if config.get("use_tracker", DEFAULTS["use_tracker"]):
         cur_tracker = player_info.get("tracker_current")
         peak_tracker = player_info.get("tracker_peak")
         if cur_tracker is not None and peak_tracker is not None:
-            cur_score = config.get("weight_current_tracker", 0.4) * math.sqrt(
+            cur_score = config.get("weight_current_tracker", DEFAULTS["weight_current_tracker"]) * math.sqrt(
                 max(0, cur_tracker)
             )
-            peak_score = config.get("weight_peak_tracker", 0.2) * math.log(
+            peak_score = config.get("weight_peak_tracker", DEFAULTS["weight_peak_tracker"]) * math.log(
                 1 + max(0, peak_tracker)
             )
             consistency_factor = 1.0
@@ -588,62 +626,10 @@ def compute_player_score_detailed(player_info, config):
 
     if mode == "advanced":
         adv = {}
-        if config.get("use_peak_act") and player_info.get("peak_rank_act"):
-            peak_act_str = player_info.get("peak_rank_act", "").upper().strip()
-
-            # Only apply peak act bonus for episodes/acts at or before the configured threshold
-            should_apply_bonus = False
-            max_episode = config.get("peak_act_max_episode", 8)
-            max_act = config.get("peak_act_max_act", 1)
-
-            if peak_act_str.startswith("E"):
-                try:
-                    parts = peak_act_str[1:].split("A")
-                    episode_num = int(parts[0])
-                    act_num = int(parts[1]) if len(parts) > 1 else 1
-
-                    # Check if episode/act is at or before the threshold
-                    if episode_num < max_episode or (
-                            episode_num == max_episode and act_num <= max_act
-                    ):
-                        should_apply_bonus = True
-                except (ValueError, IndexError):
-                    should_apply_bonus = False
-
-            if should_apply_bonus:
-                acts_ago = parse_peak_act(
-                    peak_act_str,
-                    config.get("current_season", 26),
-                    config.get("current_act", 5),
-                    config.get("acts_per_season", 6),
-                )
-                act_weight = calculate_peak_act_weight(
-                    acts_ago, config.get("peak_act_decay_rate", 0.9)
-                )
-                bonus = config.get("weight_peak_act", 0.15) * peak_val * act_weight
-                current_score += bonus
-                adv["peak_act"] = {
-                    "enabled": True,
-                    "episode_check": f"{peak_act_str} <= E{max_episode}A{max_act}",
-                    "acts_ago": acts_ago,
-                    "act_weight": act_weight,
-                    "peak_act_bonus": bonus,
-                }
-            else:
-                reason = f"Peak after E{max_episode}A{max_act} threshold - using consistency factor instead"
-                if not peak_act_str.startswith("E"):
-                    reason = "Season peak - using consistency factor instead"
-                adv["peak_act"] = {
-                    "enabled": False,
-                    "reason": reason,
-                    "peak_act_string": peak_act_str,
-                    "threshold": f"E{max_episode}A{max_act}",
-                }
-        else:
-            adv["peak_act"] = {"enabled": False}
+        adv["peak_act"] = peak_fade
 
         # Previous season blend with recency-based weighting
-        if config.get("use_returning_player_stats", False) and player_info.get(
+        if config.get("use_returning_player_stats", DEFAULTS["use_returning_player_stats"]) and player_info.get(
                 "is_returning_player", False
         ):
             prev_score = calculate_previous_season_score(player_info, config)
@@ -666,13 +652,13 @@ def compute_player_score_detailed(player_info, config):
                 # Determine blend weights based on data recency
                 if most_recent_season >= most_recent_available:  # S10 is most recent
                     # Most recent data - higher confidence in historical performance
-                    ranked_weight = config.get("recent_data_ranked_weight", 0.65)
-                    previous_weight = config.get("recent_data_previous_weight", 0.35)
+                    ranked_weight = config.get("recent_data_ranked_weight", DEFAULTS["recent_data_ranked_weight"])
+                    previous_weight = config.get("recent_data_previous_weight", DEFAULTS["recent_data_previous_weight"])
                     reason = f"Recent data (S{most_recent_season}) - standard blend ({previous_weight:.0%} historical)"
                 else:
                     # Older data - lower confidence in historical performance
-                    ranked_weight = config.get("older_data_ranked_weight", 0.75)
-                    previous_weight = config.get("older_data_previous_weight", 0.25)
+                    ranked_weight = config.get("older_data_ranked_weight", DEFAULTS["older_data_ranked_weight"])
+                    previous_weight = config.get("older_data_previous_weight", DEFAULTS["older_data_previous_weight"])
                     reason = f"Older data (S{most_recent_season}) - reduced historical weight ({previous_weight:.0%} historical)"
 
                 # Apply the blend
@@ -696,14 +682,14 @@ def compute_player_score_detailed(player_info, config):
             adv["previous_season"] = {"enabled": False}
 
         # Enhancement: Ping-based adjustment (replaces region debuff)
-        if config.get("use_ping_adjustment", False):
+        if config.get("use_ping_adjustment", DEFAULTS["use_ping_adjustment"]):
             # Get actual ping or estimate from region
             ping = player_info.get("ping")
 
             region = normalize_region(player_info.get("region", "EU"))
 
             # Fallback to region-based estimate if ping not available
-            if ping is None and config.get("use_region_ping_estimates", True):
+            if ping is None and config.get("use_region_ping_estimates", DEFAULTS["use_region_ping_estimates"]):
                 region_estimates = {
                     normalize_region(k): v
                     for k, v in config.get(
@@ -732,7 +718,7 @@ def compute_player_score_detailed(player_info, config):
                 region = normalize_region(player_info.get("region", "EU"))
                 if region != "EU":
                     pre = current_score
-                    mult = config.get("non_eu_debuff", 0.95)
+                    mult = config.get("non_eu_debuff", DEFAULTS["non_eu_debuff"])
                     current_score *= mult
                     adv["region_debuff"] = {
                         "enabled": True,
@@ -751,11 +737,11 @@ def compute_player_score_detailed(player_info, config):
                 adv["region_debuff"] = {"enabled": False}
 
         # New player debuff (uncertainty due to limited data)
-        if config.get("use_new_player_debuff", True):
+        if config.get("use_new_player_debuff", DEFAULTS["use_new_player_debuff"]):
             is_returning = player_info.get("is_returning_player", False)
             if not is_returning:
                 pre = current_score
-                mult = config.get("new_player_debuff", 0.95)  # 95% of ranked data only
+                mult = config.get("new_player_debuff", DEFAULTS["new_player_debuff"])  # 95% of ranked data only
                 current_score *= mult
                 adv["new_player_debuff"] = {
                     "enabled": True,
@@ -906,7 +892,7 @@ def main():
     except (OSError, ValueError) as e:
         print("Failed to load config:", e)
         return
-    players_file = config.get("players_file", "players.json")
+    players_file = config.get("players_file", DEFAULTS["players_file"])
     if not os.path.isabs(players_file):
         players_path = os.path.join(base_dir, "data", players_file)
     else:

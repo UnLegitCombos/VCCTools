@@ -13,7 +13,7 @@
 players_file: players.json
 mode: advanced                 # basic (ranks + tracker) or advanced (adds everything below)
 
-# --- Current period (only used to decay old Episode-era peak-act bonuses) ---
+# --- Current period (used to age peak_rank_act) ---
 current_season: 26
 current_act: 5
 acts_per_season: 6             # acts in a season (Episode acts stay at 3)
@@ -25,12 +25,11 @@ weight_peak: 0.3
 weight_current_tracker: 0.2
 weight_peak_tracker: 0.1
 
-# --- Peak act bonus (Episode-era peaks up to E<max_episode>A<max_act>) ---
+# --- Peak age: older peaks count less ---
+# A peak above the current rank fades toward the current rank by 10% of the
+# gap per act since peak_rank_act (0.9 = keep 90% each act).
 use_peak_act: true
-peak_act_max_episode: 8
-peak_act_max_act: 1
 peak_act_decay_rate: 0.9
-weight_peak_act: 0.15
 
 use_role_balancing: true
 
@@ -113,17 +112,19 @@ rank_values:
   Radiant: 30
 
 # --- Randomness ---
-random_seed: null                  # null = draw a seed, print it and record it in the output
+random_seed: 15                    # = VCC season number (S15); bump it each season. null = new seed every run
 
 # --- Team optimizer (used by build_teams) ---
+# Optional: the values below are the built-in defaults. Uncomment a key to change it.
 # Stacks of 1, 2, 3 or 5 players are supported; a 4-stack is invalid and excluded.
 # optimizer:
-#   iterations: 400000
+#   iterations: 50000000           # upper bound; time_limit_s usually stops it first
 #   restarts: 8
-#   time_limit_s: 60
+#   time_limit_s: 180
 #   t0: null                       # null = calibrate from sampled moves
 #   t_end: null
 #   target_range: 0.1              # stop early once max-min team score is below this
+#   target_role_penalty: 0.0       # ...and the role penalty is at or below this
 #   range_weight: 1.0
 #   std_weight: 0.2
 #   role_weight: 0.5
@@ -137,13 +138,21 @@ random_seed: null                  # null = draw a seed, print it and record it 
 #   team_order: shuffled           # shuffled (seeded) or by_score
 
 # --- Groups (used by make_groups; enables the cluster term above) ---
+# Every group plays on Frankfurt. If NA teams can be gathered into one group
+# without the group strengths drifting more than na_balance_tolerance points
+# apart (beyond the most even split), and that group ends up at least
+# na_server_min_share NA players, it plays on na_server (London) instead.
+# Set na_server: null to use the servers exactly as listed.
 # groups:
 #   count: 3
-#   servers: [London, Frankfurt, Frankfurt]
+#   servers: [Frankfurt, Frankfurt, Frankfurt]
+#   na_server: London
+#   na_server_min_share: 0.5       # half or more of the group's players are NA
+#   na_balance_tolerance: 1.0      # extra spread of group means allowed for it
 #   sizes: auto                    # auto or a list such as [6, 6, 6]
 #   region_server_cost:            # cost per player of that region in a group on that server
 #     Frankfurt:
-#       NA: 10                     # NA players outside London are expensive
+#       NA: 10                     # pushes NA teams into the London group
 #     London:
 #       MENA: 2
 #   balance_weight: 1.0

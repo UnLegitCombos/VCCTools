@@ -17,6 +17,8 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_DIR = os.path.join(BASE_DIR, "config")
 LOCAL_CONFIG_NAME = "config.yaml"
 EXAMPLE_CONFIG_NAME = "config.example.yaml"
+# Optional optimizer profile, enabled with ``build_teams --tighter``.
+TIGHTER_PROFILE = "config_tighter_teams.yaml"
 
 DEFAULT_RANK_VALUES = {
     "Iron 1": 1,
@@ -71,7 +73,10 @@ OUTPUT_DEFAULTS = {
 # Defaults for the optional ``groups:`` block (consumed by make_groups).
 GROUPS_DEFAULTS = {
     "count": 3,
-    "servers": ["London", "Frankfurt", "Frankfurt"],
+    "servers": ["Frankfurt", "Frankfurt", "Frankfurt"],
+    "na_server": "London",
+    "na_server_min_share": 0.5,
+    "na_balance_tolerance": 1.0,
     "sizes": "auto",
     "region_server_cost": {"Frankfurt": {"NA": 10}, "London": {"MENA": 2}},
     "balance_weight": 1.0,
@@ -90,16 +95,13 @@ DEFAULTS = {
     "current_season": 26,
     "current_act": 5,
     "acts_per_season": 6,
-    "use_tracker": False,
+    "use_tracker": True,
     "weight_current": 0.7,
     "weight_peak": 0.3,
     "weight_current_tracker": 0.2,
     "weight_peak_tracker": 0.1,
     "use_peak_act": True,
-    "peak_act_max_episode": 8,
-    "peak_act_max_act": 2,
     "peak_act_decay_rate": 0.9,
-    "weight_peak_act": 0.15,
     "use_role_balancing": True,
     "use_region_debuff": False,
     "non_eu_debuff": 0.9,
@@ -132,7 +134,7 @@ DEFAULTS = {
         "slope": 0.5,
     },
     "rank_values": DEFAULT_RANK_VALUES,
-    "random_seed": None,
+    "random_seed": 15,  # VCC season number
     "optimizer": OPTIMIZER_DEFAULTS,
     "output": OUTPUT_DEFAULTS,
     "groups": None,
@@ -152,6 +154,9 @@ DEPRECATED_KEYS = {
     "top_tier_score_reduction": "replaced by top_tier_compression.knee_percentile",
     "compression_full_strength_ranks": "replaced by top_tier_compression",
     "compression_taper_ranks": "replaced by top_tier_compression",
+    "peak_act_max_episode": "removed: every peak now fades with age (peak_act_decay_rate)",
+    "peak_act_max_act": "removed: every peak now fades with age (peak_act_decay_rate)",
+    "weight_peak_act": "removed: the peak-act bonus became a fade toward the current rank",
 }
 
 # Legacy optimizer keys: old key -> (new dotted key, factor) or None if ignored.
@@ -305,7 +310,7 @@ def _apply_legacy_and_check_keys(config, user_keys):
                     _warn(config, f"Unknown config key '{section}.{sub}' (ignored).")
 
 
-def load_team_config(path=None, config_dir=None):
+def load_team_config(path=None, config_dir=None, profile=None):
     """Load the team maker configuration.
 
     Args:
@@ -313,6 +318,9 @@ def load_team_config(path=None, config_dir=None):
             directory is used, falling back to ``config.example.yaml``.
         config_dir: Directory holding the config files (defaults to
             ``teamMaker/config``).
+        profile: Optional profile file (e.g. ``TIGHTER_PROFILE``), relative to
+            the config directory, whose settings are applied on top of the
+            loaded config.
 
     Returns:
         Merged configuration dictionary. ``_sources`` lists the files that
@@ -332,6 +340,11 @@ def load_team_config(path=None, config_dir=None):
 
     sources = []
     user = _load_chain(path, [], sources)
+    if profile:
+        profile_path = profile
+        if not os.path.isabs(profile_path):
+            profile_path = os.path.join(config_dir, profile_path)
+        user = deep_merge(user, _load_chain(profile_path, [], sources))
 
     config = deep_merge(DEFAULTS, user)
     config["_sources"] = sources

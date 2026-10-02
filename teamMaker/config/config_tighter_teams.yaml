@@ -1,16 +1,9 @@
-# Tighter-teams profile. Not meant to be used on its own: extend it from a
-# local config.yaml, or run it directly (it extends the documented example).
+# Tighter-teams profile: optimizer settings applied on top of config.yaml.
 #
-#   # config.yaml
-#   extends: config_tighter_teams.yaml
-#   random_seed: 12
+#   python -m teamMaker.core.build_teams --tighter
 #
-# Only the values that differ from config.example.yaml are listed here.
-extends: config.example.yaml
-
-peak_act_max_act: 2            # count Episode peaks up to E8A2 for the peak-act bonus
-
-random_seed: 12                # fixed seed for reproducible runs
+# Only the settings below change; everything else (scoring, seed, groups)
+# comes from config.yaml. Expect slower runs for closer team totals.
 
 optimizer:
   restarts: 10

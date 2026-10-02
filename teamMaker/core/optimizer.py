@@ -622,7 +622,7 @@ def optimize_teams(units, config, seed, cluster_cap=None, progress=None):
     total = sum(u.size for u in units)
     teams = total // TEAM_SIZE
     weights = optimizer_weights(config)
-    iterations = int(opt.get("iterations", 400000))
+    iterations = int(opt.get("iterations", 50000000))
     restarts = max(1, int(opt.get("restarts", 8)))
     limit = opt.get("time_limit_s")
     target_range = float(opt.get("target_range") or 0.0)
@@ -733,9 +733,13 @@ def auto_cluster_cap(config, total_teams, fixed_cluster_teams=0):
     if not groups:
         return None
     sizes = group_sizes(total_teams, groups)
-    servers = groups.get("servers") or []
-    home = servers[0] if servers else "London"
-    capacity = sum(s for s, srv in zip(sizes, servers) if srv == home)
+    if groups.get("na_server"):
+        # NA teams can only gather in one group (the one that may move server).
+        capacity = max(sizes)
+    else:
+        servers = groups.get("servers") or []
+        home = servers[0] if servers else "London"
+        capacity = sum(s for s, srv in zip(sizes, servers) if srv == home)
     return max(0, capacity - fixed_cluster_teams)
 
 

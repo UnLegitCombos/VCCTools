@@ -3,14 +3,16 @@
 Pipeline: config -> players -> scores -> units -> sub selection ->
 optimizer -> validation -> teams.json -> report -> teams.png.
 
-Run from the repo root with ``python -m teamMaker.core.build_teams``.
+Run from the repo root with ``python -m teamMaker.core.build_teams``; add
+``--tighter`` to apply the tighter-teams optimizer profile.
 """
 
+import argparse
 import os
 
 from teamMaker.core import optimizer as opt
 from teamMaker.core import report, teams_output
-from teamMaker.core.config import BASE_DIR, load_team_config, resolve_seed
+from teamMaker.core.config import BASE_DIR, TIGHTER_PROFILE, load_team_config, resolve_seed
 from teamMaker.core.scoring import _export_scores, _load_players
 from teamMaker.core.utils.console import setup_console
 
@@ -119,10 +121,21 @@ def run(config=None):
     return doc, text
 
 
-def main():
+def main(argv=None):
     """Command line entry point."""
     setup_console()
-    _, text = run()
+    parser = argparse.ArgumentParser(description="Build balanced teams from players.json")
+    parser.add_argument(
+        "--tighter",
+        action="store_true",
+        help=f"apply the optimizer settings in config/{TIGHTER_PROFILE} "
+        "(closer team totals, slower)",
+    )
+    args = parser.parse_args(argv)
+    config = load_team_config(profile=TIGHTER_PROFILE if args.tighter else None)
+    if args.tighter:
+        print(f"Using the tighter-teams profile ({TIGHTER_PROFILE})")
+    _, text = run(config)
     print(text)
 
 
