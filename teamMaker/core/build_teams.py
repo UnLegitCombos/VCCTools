@@ -4,12 +4,16 @@ Pipeline: config -> players -> scores -> units -> sub selection ->
 optimizer -> validation -> teams.json -> report -> teams.png.
 
 Run from the repo root with ``python -m teamMaker.core.build_teams``; add
-``--tighter`` to apply the tighter-teams optimizer profile.
+``--tighter`` to apply the tighter-teams optimizer profile and ``--no-time-limit``
+to let every restart run its full iteration budget. ``--solver`` picks the
+search: annealing (default), ortools or both (needs requirements-ortools.txt).
 """
 
 import argparse
 import os
+import sys
 
+from teamMaker.core import cpsat
 from teamMaker.core import optimizer as opt
 from teamMaker.core import report, teams_output
 from teamMaker.core.config import BASE_DIR, TIGHTER_PROFILE, load_team_config, resolve_seed
@@ -47,6 +51,60 @@ def _render_png(doc, path, config):
         print(f"Warning: could not render {os.path.basename(path)}: {exc}")
         return None
     return path
+
+
+SOLVERS = ("annealing", "ortools", "both")
+
+
+def search(units, config, seed, cluster_cap, progress=None):
+    """Split the units into teams with the configured solver.
+
+    ``optimizer.solver``: ``annealing`` (simulated annealing), ``ortools``
+    (OR-Tools CP-SAT) or ``both`` (annealing, then OR-Tools starts from its
+    result; the better of the two is kept).
+
+    Returns:
+        OptimizationResult; with ``both`` its runs list holds the annealing
+        restarts followed by the OR-Tools run.
+    """
+    o = config["optimizer"]
+    solver = str(o.get("solver", "annealing")).lower()
+    if solver not in SOLVERS:
+        raise ValueError(f"optimizer.solver must be one of {SOLVERS}, got {solver!r}")
+    if solver == "annealing":
+        return opt.optimize_teams(units, config, seed, cluster_cap, progress)
+
+    def or_progress(seconds, m):
+        print(
+            f"  OR-Tools {seconds:6.1f}s: range {m['range']:.2f}, "
+            f"roles {m['role_penalty']:.1f}, energy {m['energy']:.3f}"
+        )
+
+    options = {
+        "time_limit_s": o.get("ortools_time_limit_s", 300),
+        "provers": str(o.get("ortools_provers", "one")).lower(),
+        "workers": o.get("ortools_workers", 8),
+        "progress": or_progress,
+    }
+    if solver == "ortools":
+        print(f"Searching with OR-Tools ({options['time_limit_s']}s, provers: {options['provers']})...")
+        return cpsat.solve_teams(units, config, seed, cluster_cap, **options)
+
+    first = opt.optimize_teams(units, config, seed, cluster_cap, progress)
+    print(
+        f"Improving the annealing result with OR-Tools "
+        f"({options['time_limit_s']}s, provers: {options['provers']})..."
+    )
+    second = cpsat.solve_teams(units, config, seed, cluster_cap, hint=first.teams, **options)
+    best = second if second.energy < first.energy - 1e-9 else first
+    return opt.OptimizationResult(
+        teams=best.teams,
+        energy=best.energy,
+        metrics=best.metrics,
+        runs=first.runs + second.runs,
+        stopped_by=f"{first.stopped_by}, then OR-Tools {second.stopped_by}",
+        elapsed=first.elapsed + second.elapsed,
+    )
 
 
 def run(config=None):
@@ -91,7 +149,7 @@ def run(config=None):
         )
 
     print(f"Optimizing {team_count} teams from {len(kept)} units (seed {seed})...")
-    result = opt.optimize_teams(kept, config, seed, cap, progress)
+    result = search(kept, config, seed, cap, progress)
 
     excluded_names = [n for names, _ in build.excluded for n in names]
     sub_names = [n for n, _ in build.pool_subs] + [n for u in dropped for n in u.names]
@@ -131,11 +189,49 @@ def main(argv=None):
         help=f"apply the optimizer settings in config/{TIGHTER_PROFILE} "
         "(closer team totals, slower)",
     )
+    parser.add_argument(
+        "--no-time-limit",
+        action="store_true",
+        help="ignore optimizer.time_limit_s: every restart runs its full iteration "
+        "budget (stops early only at the target); slow, but reproducible",
+    )
+    parser.add_argument(
+        "--solver", choices=SOLVERS,
+        help="search method (default: optimizer.solver, normally annealing); "
+        "ortools and both need requirements-ortools.txt",
+    )
+    parser.add_argument(
+        "--provers", choices=cpsat.PROVERS,
+        help="OR-Tools workers spent proving a bound: all, one or none (default one)",
+    )
+    parser.add_argument("--ortools-time", type=float, metavar="SECONDS",
+                        help="how long OR-Tools searches (default 300)")
+    parser.add_argument("--ortools-workers", type=int, metavar="N",
+                        help="CPU threads for OR-Tools (default 8)")
     args = parser.parse_args(argv)
     config = load_team_config(profile=TIGHTER_PROFILE if args.tighter else None)
+    opt_cfg = config["optimizer"]
+    for flag, key in (
+        ("solver", "solver"),
+        ("provers", "ortools_provers"),
+        ("ortools_time", "ortools_time_limit_s"),
+        ("ortools_workers", "ortools_workers"),
+    ):
+        if getattr(args, flag) is not None:
+            opt_cfg[key] = getattr(args, flag)
     if args.tighter:
         print(f"Using the tighter-teams profile ({TIGHTER_PROFILE})")
-    _, text = run(config)
+    if args.no_time_limit:
+        opt_cfg["time_limit_s"] = None
+        print(
+            f"No time limit: {opt_cfg['restarts']} restarts of up to "
+            f"{opt_cfg['iterations']:,} iterations each; this can take tens of minutes"
+        )
+    try:
+        _, text = run(config)
+    except (cpsat.OrToolsUnavailable, ValueError) as exc:
+        print(f"Error: {exc}")
+        sys.exit(1)
     print(text)
 
 

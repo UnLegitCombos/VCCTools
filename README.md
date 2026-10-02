@@ -72,6 +72,7 @@ Settings live in `teamMaker/config/config.yaml`. Without that file `config.examp
 
    ```bash
    python -m teamMaker.core.build_teams              # add --tighter for closer team totals (slower)
+                                                     # add --no-time-limit to search until it settles
    ```
 
 7. Optional: split the teams into groups (`groups.png`):
@@ -98,7 +99,7 @@ Settings live in `teamMaker/config/config.yaml`. Without that file `config.examp
 | Command | Does | Options |
 | --- | --- | --- |
 | `generate_players` | Sign-up CSV → `players.json` (with VCC history) | `--dry-run` checks the CSV only; `--keep-existing` only adds new sign-ups |
-| `build_teams` | `players.json` → `teams.json`, `teams.png` | `--tighter` for closer team totals |
+| `build_teams` | `players.json` → `teams.json`, `teams.png` | `--tighter` for closer team totals; `--no-time-limit` to search until it settles (tens of minutes, same seed = same teams); `--solver annealing|ortools|both`, `--provers all|one|none`, `--ortools-time SECONDS`, `--ortools-workers N` (OR-Tools: `pip install -r requirements-ortools.txt`) |
 | `make_groups` | `teams.json` → `groups.json`, `groups.png` | |
 | `scrape_distributions` | Archives a VCC season's ratings | `--dry-run`, `--refresh` |
 | `scoring` | Writes the player scores only | |
@@ -149,7 +150,9 @@ Missing ratings are listed in `teamMaker/data/players_missing.json`; typos and o
 
 ## How teams and groups are made
 
-**Teams**: `build_teams` keeps stacks together and searches for the split with the closest team totals and a sensible role spread. It stops after 3 minutes, or earlier once all teams are within 0.1 points with a perfect role spread. If the players do not divide into teams of 5, the extras become subs: new players and the latest sign-ups first. `--tighter` waits for 0.05 points (up to 5 minutes) and favours strength over roles.
+**Teams**: `build_teams` keeps stacks together and searches for the split with the closest team totals and a sensible role spread. It stops after 3 minutes, or earlier once all teams are within 0.1 points with a perfect role spread. If the players do not divide into teams of 5, the extras become subs: new players and the latest sign-ups first. `--tighter` waits for 0.05 points (up to 5 minutes) and favours strength over roles. `--no-time-limit` drops the time limit: every restart searches until it has fully settled (or hits the target), which takes far longer but gives identical teams for the same seed. The options can be combined.
+
+**OR-Tools (optional)**: `--solver ortools` searches with Google OR-Tools instead of annealing; `--solver both` runs annealing first and lets OR-Tools improve its result, keeping the better one (best results on bigger seasons in testing). `--provers` sets how many OR-Tools workers try to prove the result is the best (`all`, `one`, `none`; `one` by default). Install it with `pip install -r requirements-ortools.txt`.
 
 **Groups**: `make_groups` splits the teams into 3 groups with the closest average strength. Every group plays on **Frankfurt**. If NA teams can be gathered into one group while the group averages stay within 1 point of the most even split, and that group ends up at least half NA players, it plays on **London**.
 
@@ -198,7 +201,7 @@ The main settings in `config.yaml`:
 ## Troubleshooting
 
 - **Players in `players_missing.json`**: a rating is blank or the rank is misspelled, or a returning player has no valid VCC profile link. Check with `generate_players --dry-run`.
-- **Teams differ between reruns**: runs usually stop at the time limit, so results can differ slightly even with the same seed. Keep the `teams.json` you published.
+- **Teams differ between reruns**: runs usually stop at the time limit, so results can differ slightly even with the same seed. Keep the `teams.json` you published, or use `build_teams --no-time-limit`, which gives identical teams for the same seed.
 - **No PNG**: install Pillow (`pip install -r requirements.txt`). The JSON and console output are always written.
 - **`make_groups` reuse error**: the teams changed since `groups.json` was written; use `mode: auto`.
 

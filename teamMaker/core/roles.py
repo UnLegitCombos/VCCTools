@@ -81,6 +81,11 @@ def signature_id(sig):
     return sid
 
 
+def signature_of(sig_id):
+    """Return the cost vector (halves, MAIN_ROLES order) for a signature id."""
+    return _ID_SIGS[sig_id]
+
+
 def _permutations(n):
     """Return all injective role -> player index tuples for n players."""
     perms = _PERMUTATIONS.get(n)

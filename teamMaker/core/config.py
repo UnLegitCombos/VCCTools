@@ -63,6 +63,11 @@ OPTIMIZER_DEFAULTS = {
     "cluster_regions": ["NA"],
     "cluster_max_teams": None,
     "cluster_weight": 2.0,
+    # Search method: annealing, ortools or both (annealing, then OR-Tools improves it).
+    "solver": "annealing",
+    "ortools_time_limit_s": 300,
+    "ortools_provers": "one",  # all, one or none (see core/cpsat.py)
+    "ortools_workers": 8,
 }
 
 OUTPUT_DEFAULTS = {

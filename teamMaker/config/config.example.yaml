@@ -128,6 +128,10 @@ random_seed: 15                    # = VCC season number (S15); bump it each sea
 #   cluster_regions: [NA]          # regions kept together (only when `groups:` is set)
 #   cluster_max_teams: null        # null = derived from the London group size(s)
 #   cluster_weight: 2.0
+#   solver: annealing              # annealing, ortools or both (needs requirements-ortools.txt)
+#   ortools_time_limit_s: 300      # seconds OR-Tools searches
+#   ortools_provers: one           # all, one or none: OR-Tools workers proving a bound
+#   ortools_workers: 8             # CPU threads for OR-Tools
 
 # --- Output ---
 # output:

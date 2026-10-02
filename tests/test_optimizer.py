@@ -317,3 +317,26 @@ def test_auto_cluster_cap_with_na_server_is_one_group():
         "na_server": "London",
     }
     assert opt.auto_cluster_cap(config, 20) == 7  # sizes 7, 7, 6
+
+
+def test_no_time_limit_runs_full_budget_and_is_reproducible():
+    # target_range -1 can never be met, so only the iteration budget stops it.
+    _, _, config, _, kept, _ = _prepare(
+        time_limit_s=None, iterations=3000, restarts=2, target_range=-1
+    )
+    a = opt.optimize_teams(kept, config, 11)
+    b = opt.optimize_teams(kept, config, 11)
+    assert a.stopped_by == "iterations"
+    assert [r["iterations"] for r in a.runs] == [3000, 3000]
+    assert [[u.names for u in t] for t in a.teams] == [[u.names for u in t] for t in b.teams]
+
+
+def test_build_teams_no_time_limit_flag(monkeypatch):
+    from teamMaker.core import build_teams
+
+    seen = {}
+    monkeypatch.setattr(build_teams, "run", lambda config: (seen.setdefault("cfg", config), "report"))
+    build_teams.main(["--no-time-limit"])
+    assert seen.pop("cfg")["optimizer"]["time_limit_s"] is None
+    build_teams.main([])
+    assert seen.pop("cfg")["optimizer"]["time_limit_s"] == 180

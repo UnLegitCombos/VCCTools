@@ -1,0 +1,3 @@
+# Optional: only for build_teams --solver ortools / both
+-r requirements.txt
+ortools>=9.15
