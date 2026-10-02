@@ -1,4 +1,5 @@
-"""Rating & player scoring (trimmed)."""
+"""Player scoring: one number per player from rank, peak, tracker scores,
+VCC history and ping. See compute_player_score_detailed for the steps."""
 
 import math
 import os
@@ -9,20 +10,26 @@ import warnings
 
 from teamMaker.core.config import DEFAULTS, load_team_config
 
-# Global cache for season distributions loaded from file (Bug Fix #5)
+__all__ = [
+    "compute_player_score",
+    "compute_player_score_detailed",
+    "calculate_previous_season_score",
+    "parse_peak_act",
+    "calculate_peak_act_weight",
+    "rank_to_numeric",
+    "rank_to_numeric_with_rr",
+    "calculate_ping_adjustment",
+    "apply_top_tier_compression",
+    "score_players",
+    "normalize_season",
+    "REGION_ALIASES",
+]
+
+# Season distributions loaded from archive/season_distributions.json.
 _SEASON_DISTRIBUTIONS_CACHE = None
 
 # Region codes seen in player data that differ from the config keys.
 REGION_ALIASES = {"ME": "MENA"}
-
-DEFAULT_REGION_PING_ESTIMATES = {
-    "EU": 30,
-    "MENA": 80,
-    "NA": 110,
-    "ASIA": 180,
-    "OCE": 200,
-    "SA": 170,
-}
 
 # Seasons we already warned about (one warning per season per process).
 _WARNED_SEASONS = set()
@@ -90,7 +97,6 @@ def rank_to_numeric(rank_str, rank_values):
     """
     rank = canonical_rank(rank_str, rank_values)
     if rank is None:
-        # Bug Fix #4: Warn when unknown rank encountered
         if rank_str and str(rank_str).strip():
             warnings.warn(f"Unknown rank encountered: '{rank_str}'", UserWarning)
         return 0
@@ -122,7 +128,7 @@ def rank_to_numeric_with_rr(rank_str, rank_values, rr_value=None, config=None):
 
     if rr_value is None or rr_value < 0:
         return base_value
-    if rank_str not in config.get("rr_granularity_ranks", ["Immortal 3", "Radiant"]):
+    if rank_str not in config.get("rr_granularity_ranks", DEFAULTS["rr_granularity_ranks"]):
         return base_value
 
     if rank_str == "Radiant":
@@ -210,9 +216,7 @@ def calculate_peak_act_weight(acts_ago, decay_rate):
 
 
 def _get_season_distributions(config):
-    """Get season rating distributions with caching.
-
-    Bug Fix #5: Implements module-level caching to avoid repeated file I/O.
+    """Get season rating distributions (the archive file is read once).
 
     Args:
         config: Configuration dictionary
@@ -257,17 +261,11 @@ def _get_season_distributions(config):
 
 
 def calculate_ping_adjustment(ping, config):
-    """Calculate ping-based rating adjustment.
+    """Calculate the ping penalty.
 
-    Enhancement: Ping-Based Rating Adjustment
-    Replaces region debuff with actual ping-based penalties using piecewise linear interpolation.
-
-    Breakpoints:
-    - 0-80ms: 0% penalty (1.00x)
-    - 80ms: 5% penalty (0.95x)
-    - 110ms: 10% penalty (0.90x)
-    - 150ms: 15% penalty (0.85x)
-    - 200ms+: 20% penalty (0.80x)
+    ``ping_breakpoints`` is a list of [ping_ms, penalty_fraction]; the penalty
+    is interpolated linearly between them and flat outside them (default:
+    none up to 70 ms, 5% at 80, 10% at 110, 15% at 150, 20% from 200).
 
     Args:
         ping: Ping in milliseconds (can be None)
@@ -276,11 +274,7 @@ def calculate_ping_adjustment(ping, config):
     Returns:
         Dictionary with adjustment details including multiplier and breakdown
     """
-    # Default breakpoints: [[ping_ms, penalty_fraction], ...]
-    breakpoints = config.get(
-        "ping_breakpoints",
-        [[0, 0.00], [80, 0.05], [110, 0.10], [150, 0.15], [200, 0.20]],
-    )
+    breakpoints = config.get("ping_breakpoints", DEFAULTS["ping_breakpoints"])
 
     result = {
         "enabled": config.get("use_ping_adjustment", DEFAULTS["use_ping_adjustment"]),
@@ -386,17 +380,13 @@ def calculate_previous_season_score(player_info, config):
         return False
 
     def convert_zscore_to_score(rating, distribution):
-        """Convert rating to score using Z-score normalization.
+        """Map an adjusted rating to 1-35 points by its z-score in its season.
 
-        Bug Fix #2: Enhanced with robust validation for division by zero.
-        - Minimum sample size check (MIN_SAMPLE_SIZE=10)
-        - Minimum standard deviation check (MIN_STD_DEV=0.001)
-
-        This correctly handles cross-season comparisons where formula changes
-        have shifted the overall rating distributions.
+        Comparing within each season keeps seasons comparable when the
+        rating formula changed. Too few values or no spread give 15 points.
         """
-        MIN_SAMPLE_SIZE = 10  # Configurable: minimum sample size for valid statistics
-        MIN_STD_DEV = 0.001  # Configurable: minimum std dev to avoid division by zero
+        MIN_SAMPLE_SIZE = 10
+        MIN_STD_DEV = 0.001
 
         if not distribution or len(distribution) < MIN_SAMPLE_SIZE:
             return 15.0
@@ -406,7 +396,6 @@ def calculate_previous_season_score(player_info, config):
         variance = sum((x - mean) ** 2 for x in distribution) / len(distribution)
         std_dev = math.sqrt(variance)
 
-        # Bug Fix #2: Robust validation for division by zero
         if std_dev < MIN_STD_DEV:
             return 15.0
 
@@ -437,7 +426,7 @@ def calculate_previous_season_score(player_info, config):
         if len(season_scores) == 1:
             return next(iter(season_scores.values()))
 
-        # New decay-based weighting system
+        # Weight seasons by recency.
         def calculate_decay_weights(seasons):
             weights = {}
             # Sort seasons by number (S10, S9, S8, etc.)
@@ -488,14 +477,13 @@ def compute_player_score(player_info, config):
 def compute_player_score_detailed(player_info, config):
     """Compute player score with detailed breakdown.
 
-    Main scoring function that combines:
-    - Current and peak rank values
-    - Tracker stats (if enabled)
-    - Peak act bonus (if enabled and in advanced mode)
-    - Previous season performance (if enabled and in advanced mode)
-    - Ping adjustment (if enabled and in advanced mode)
-    - New player debuff (if enabled and in advanced mode)
-    - RR granularity for Immortal 3+ (if enabled)
+    Steps, each switchable in the config:
+    - current and peak rank values (RR on top for Immortal 3 / Radiant), with
+      older peaks fading toward the current rank
+    - tracker scores
+    - VCC history blend for returning players
+    - ping penalty
+    - new player discount
 
     Args:
         player_info: Dictionary containing player data including:
@@ -515,7 +503,6 @@ def compute_player_score_detailed(player_info, config):
     Returns:
         Dictionary with detailed breakdown of score components
     """
-    mode = config.get("mode", DEFAULTS["mode"])
     rank_values = config.get("rank_values", {})
 
     # Extract RR values for Immortal 3+ granularity
@@ -567,7 +554,6 @@ def compute_player_score_detailed(player_info, config):
         }
 
     breakdown = {
-        "mode": mode,
         "rank_components": {
             "current_rank": player_info.get("current_rank"),
             "current_rank_value": current_val,
@@ -624,146 +610,100 @@ def compute_player_score_detailed(player_info, config):
     else:
         breakdown["tracker_components"] = {"enabled": False}
 
-    if mode == "advanced":
-        adv = {}
-        adv["peak_act"] = peak_fade
+    adv = {"peak_act": peak_fade}
 
-        # Previous season blend with recency-based weighting
-        if config.get("use_returning_player_stats", DEFAULTS["use_returning_player_stats"]) and player_info.get(
-                "is_returning_player", False
-        ):
-            prev_score = calculate_previous_season_score(player_info, config)
-            if prev_score > 0:
-                pre_blend = current_score
-
-                # Check data recency to determine blend weights
-                prev_stats = player_info.get("previous_season_stats", {})
-
-                def get_most_recent_season(stats):
-                    if isinstance(stats, list):
-                        seasons = [season_number(e.get("season", "")) for e in stats]
-                        return max(seasons) if seasons else 0
-                    return season_number(stats.get("season", ""))
-
-                most_recent_season = get_most_recent_season(prev_stats)
-
-                most_recent_available = _latest_season_available(config)
-
-                # Determine blend weights based on data recency
-                if most_recent_season >= most_recent_available:  # S10 is most recent
-                    # Most recent data - higher confidence in historical performance
-                    ranked_weight = config.get("recent_data_ranked_weight", DEFAULTS["recent_data_ranked_weight"])
-                    previous_weight = config.get("recent_data_previous_weight", DEFAULTS["recent_data_previous_weight"])
-                    reason = f"Recent data (S{most_recent_season}) - standard blend ({previous_weight:.0%} historical)"
-                else:
-                    # Older data - lower confidence in historical performance
-                    ranked_weight = config.get("older_data_ranked_weight", DEFAULTS["older_data_ranked_weight"])
-                    previous_weight = config.get("older_data_previous_weight", DEFAULTS["older_data_previous_weight"])
-                    reason = f"Older data (S{most_recent_season}) - reduced historical weight ({previous_weight:.0%} historical)"
-
-                # Apply the blend
-                current_score = (
-                        current_score * ranked_weight + prev_score * previous_weight
-                )
-
-                adv["previous_season"] = {
-                    "enabled": True,
-                    "previous_season_score": prev_score,
-                    "pre_blend_score": pre_blend,
-                    "post_blend_score": current_score,
-                    "blend_reason": reason,
-                    "most_recent_season": most_recent_season,
-                    "ranked_weight": ranked_weight,
-                    "previous_weight": previous_weight,
-                }
+    # VCC history: blended in for returning players, more when it is recent.
+    if config.get("use_returning_player_stats", DEFAULTS["use_returning_player_stats"]) and player_info.get(
+            "is_returning_player", False
+    ):
+        prev_score = calculate_previous_season_score(player_info, config)
+        if prev_score > 0:
+            pre_blend = current_score
+            prev_stats = player_info.get("previous_season_stats", {})
+            if isinstance(prev_stats, list):
+                seasons = [season_number(e.get("season", "")) for e in prev_stats]
+                most_recent_season = max(seasons) if seasons else 0
             else:
-                adv["previous_season"] = {"enabled": True, "previous_season_score": 0.0}
+                most_recent_season = season_number(prev_stats.get("season", ""))
+
+            # Played in the newest archived season: trust the history more.
+            if most_recent_season >= _latest_season_available(config):
+                ranked_weight = config.get("recent_data_ranked_weight", DEFAULTS["recent_data_ranked_weight"])
+                previous_weight = config.get("recent_data_previous_weight", DEFAULTS["recent_data_previous_weight"])
+                reason = f"Recent data (S{most_recent_season}) - standard blend ({previous_weight:.0%} historical)"
+            else:
+                ranked_weight = config.get("older_data_ranked_weight", DEFAULTS["older_data_ranked_weight"])
+                previous_weight = config.get("older_data_previous_weight", DEFAULTS["older_data_previous_weight"])
+                reason = f"Older data (S{most_recent_season}) - reduced historical weight ({previous_weight:.0%} historical)"
+
+            current_score = current_score * ranked_weight + prev_score * previous_weight
+            adv["previous_season"] = {
+                "enabled": True,
+                "previous_season_score": prev_score,
+                "pre_blend_score": pre_blend,
+                "post_blend_score": current_score,
+                "blend_reason": reason,
+                "most_recent_season": most_recent_season,
+                "ranked_weight": ranked_weight,
+                "previous_weight": previous_weight,
+            }
         else:
-            adv["previous_season"] = {"enabled": False}
-
-        # Enhancement: Ping-based adjustment (replaces region debuff)
-        if config.get("use_ping_adjustment", DEFAULTS["use_ping_adjustment"]):
-            # Get actual ping or estimate from region
-            ping = player_info.get("ping")
-
-            region = normalize_region(player_info.get("region", "EU"))
-
-            # Fallback to region-based estimate if ping not available
-            if ping is None and config.get("use_region_ping_estimates", DEFAULTS["use_region_ping_estimates"]):
-                region_estimates = {
-                    normalize_region(k): v
-                    for k, v in config.get(
-                        "region_ping_estimates", DEFAULT_REGION_PING_ESTIMATES
-                    ).items()
-                }
-                ping = region_estimates.get(region, None)
-                ping_source = "region_estimate"
-            else:
-                ping_source = "actual" if ping is not None else "unavailable"
-
-            ping_adj = calculate_ping_adjustment(ping, config)
-            ping_adj["region"] = region
-            ping_adj["ping_source"] = ping_source
-
-            if ping_adj["multiplier"] < 1.0:
-                pre = current_score
-                current_score *= ping_adj["multiplier"]
-                ping_adj["pre_adjustment_score"] = pre
-                ping_adj["post_adjustment_score"] = current_score
-
-            adv["ping_adjustment"] = ping_adj
-        else:
-            # Legacy region debuff (deprecated)
-            if config.get("use_region_debuff"):
-                region = normalize_region(player_info.get("region", "EU"))
-                if region != "EU":
-                    pre = current_score
-                    mult = config.get("non_eu_debuff", DEFAULTS["non_eu_debuff"])
-                    current_score *= mult
-                    adv["region_debuff"] = {
-                        "enabled": True,
-                        "region": region,
-                        "debuff_multiplier": mult,
-                        "pre_debuff_score": pre,
-                        "post_debuff_score": current_score,
-                    }
-                else:
-                    adv["region_debuff"] = {
-                        "enabled": True,
-                        "region": region,
-                        "debuff_applied": False,
-                    }
-            else:
-                adv["region_debuff"] = {"enabled": False}
-
-        # New player debuff (uncertainty due to limited data)
-        if config.get("use_new_player_debuff", DEFAULTS["use_new_player_debuff"]):
-            is_returning = player_info.get("is_returning_player", False)
-            if not is_returning:
-                pre = current_score
-                mult = config.get("new_player_debuff", DEFAULTS["new_player_debuff"])  # 95% of ranked data only
-                current_score *= mult
-                adv["new_player_debuff"] = {
-                    "enabled": True,
-                    "is_returning_player": False,
-                    "debuff_multiplier": mult,
-                    "pre_debuff_score": pre,
-                    "post_debuff_score": current_score,
-                    "reason": "New player uncertainty - ranked data only",
-                }
-            else:
-                adv["new_player_debuff"] = {
-                    "enabled": True,
-                    "is_returning_player": True,
-                    "debuff_applied": False,
-                }
-        else:
-            adv["new_player_debuff"] = {"enabled": False}
-
-        breakdown["advanced_components"] = adv
+            adv["previous_season"] = {"enabled": True, "previous_season_score": 0.0}
     else:
-        breakdown["advanced_components"] = {"mode": "basic"}
+        adv["previous_season"] = {"enabled": False}
 
+    # Ping: the actual ping, or an estimate for the player's region.
+    if config.get("use_ping_adjustment", DEFAULTS["use_ping_adjustment"]):
+        ping = player_info.get("ping")
+        region = normalize_region(player_info.get("region", "EU"))
+        if ping is None and config.get("use_region_ping_estimates", DEFAULTS["use_region_ping_estimates"]):
+            region_estimates = {
+                normalize_region(k): v
+                for k, v in config.get(
+                    "region_ping_estimates", DEFAULTS["region_ping_estimates"]
+                ).items()
+            }
+            ping = region_estimates.get(region, None)
+            ping_source = "region_estimate"
+        else:
+            ping_source = "actual" if ping is not None else "unavailable"
+
+        ping_adj = calculate_ping_adjustment(ping, config)
+        ping_adj["region"] = region
+        ping_adj["ping_source"] = ping_source
+        if ping_adj["multiplier"] < 1.0:
+            pre = current_score
+            current_score *= ping_adj["multiplier"]
+            ping_adj["pre_adjustment_score"] = pre
+            ping_adj["post_adjustment_score"] = current_score
+        adv["ping_adjustment"] = ping_adj
+    else:
+        adv["ping_adjustment"] = {"enabled": False}
+
+    # New players (no VCC history): small discount for the uncertainty.
+    if config.get("use_new_player_debuff", DEFAULTS["use_new_player_debuff"]):
+        if not player_info.get("is_returning_player", False):
+            pre = current_score
+            mult = config.get("new_player_debuff", DEFAULTS["new_player_debuff"])
+            current_score *= mult
+            adv["new_player_debuff"] = {
+                "enabled": True,
+                "is_returning_player": False,
+                "debuff_multiplier": mult,
+                "pre_debuff_score": pre,
+                "post_debuff_score": current_score,
+                "reason": "New player uncertainty - ranked data only",
+            }
+        else:
+            adv["new_player_debuff"] = {
+                "enabled": True,
+                "is_returning_player": True,
+                "debuff_applied": False,
+            }
+    else:
+        adv["new_player_debuff"] = {"enabled": False}
+
+    breakdown["advanced_components"] = adv
     breakdown["final_score"] = current_score
     return breakdown
 
@@ -799,22 +739,6 @@ def apply_top_tier_compression(player_scores_dict, config):
         name: score if score <= knee else knee + slope * (score - knee)
         for name, score in player_scores_dict.items()
     }
-
-
-__all__ = [
-    "compute_player_score",
-    "compute_player_score_detailed",
-    "calculate_previous_season_score",
-    "parse_peak_act",
-    "calculate_peak_act_weight",
-    "rank_to_numeric",
-    "rank_to_numeric_with_rr",
-    "calculate_ping_adjustment",
-    "apply_top_tier_compression",
-    "score_players",
-    "normalize_season",
-    "REGION_ALIASES",
-]
 
 
 def _load_players(players_path):

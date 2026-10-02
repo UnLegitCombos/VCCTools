@@ -452,3 +452,34 @@ def test_keep_existing_writes_merged_file(tmp_path, monkeypatch):
     out = json.loads((data / "players.json").read_text(encoding="utf-8"))
     assert out["Alpha"] == hand["Alpha"]
     assert out["Bravo"]["group_id"] == 2 and out["Bravo"]["tracker_current"] == 500
+
+
+def test_backup_file_keeps_the_newest(tmp_path):
+    target = tmp_path / "players.json"
+    assert gp.backup_file(str(target)) is None  # nothing to back up yet
+    made = []
+    for i in range(4):
+        target.write_text(json.dumps({"run": i}), encoding="utf-8")
+        made.append(gp.backup_file(str(target), keep=2))
+    kept = sorted(p.name for p in (tmp_path / "backups").iterdir())
+    assert len(kept) == 2
+    assert json.loads(open(made[-1], encoding="utf-8").read()) == {"run": 3}
+
+
+def test_main_backs_up_players_json(tmp_path, monkeypatch):
+    data = tmp_path / "data"
+    (data / "input").mkdir(parents=True)
+    rows = [make_row("s1", "Alpha")]
+    import csv
+    with open(data / "input" / "signups.csv", "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    (data / "players.json").write_text('{"Hand": {"edited": true}}', encoding="utf-8")
+    monkeypatch.setattr(gp, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(gp, "load_config", lambda: CONFIG)
+    monkeypatch.setattr(gp, "apply_previous_seasons", lambda result, config: None)
+    gp.main([])
+    backups = list((data / "backups").iterdir())
+    assert len(backups) == 1
+    assert json.loads(backups[0].read_text(encoding="utf-8")) == {"Hand": {"edited": True}}

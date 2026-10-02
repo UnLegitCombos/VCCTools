@@ -11,7 +11,6 @@
 # exist, this file is used as-is.
 
 players_file: players.json
-mode: advanced                 # basic (ranks + tracker) or advanced (adds everything below)
 
 # --- Current period (used to age peak_rank_act) ---
 current_season: 26
@@ -33,11 +32,9 @@ peak_act_decay_rate: 0.9
 
 use_role_balancing: true
 
-# --- Debuffs ---
+# --- New players ---
 use_new_player_debuff: true    # players without previous-season data
 new_player_debuff: 0.95
-use_region_debuff: false       # flat multiplier for non-EU; superseded by the ping curve
-non_eu_debuff: 0.9
 
 # --- Previous season stats (z-score against each season's distribution) ---
 use_returning_player_stats: true

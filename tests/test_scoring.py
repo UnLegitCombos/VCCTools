@@ -97,7 +97,8 @@ def test_old_peak_fades_toward_current_rank():
 
 def test_removed_peak_act_keys_warn():
     from teamMaker.core.config import DEPRECATED_KEYS
-    for key in ("peak_act_max_episode", "peak_act_max_act", "weight_peak_act"):
+    for key in ("peak_act_max_episode", "peak_act_max_act", "weight_peak_act",
+                "mode", "use_region_debuff", "non_eu_debuff"):
         assert key in DEPRECATED_KEYS
 
 

@@ -49,6 +49,7 @@ Settings live in `teamMaker/config/config.yaml`. Without that file `config.examp
 
 3. In `config.yaml`, set `random_seed` to the new VCC season number, and `current_season` / `current_act` to the current Valorant season and act (used to age peak ranks).
 4. Remove last season's CSV from `teamMaker/data/input/`.
+5. If NA players signed up, uncomment the `groups:` block in `config.yaml` (see [groups](#how-teams-and-groups-are-made)).
 
 ### Every time you make teams
 
@@ -152,6 +153,8 @@ Missing ratings are listed in `teamMaker/data/players_missing.json`; typos and o
 
 **Groups**: `make_groups` splits the teams into 3 groups with the closest average strength. Every group plays on **Frankfurt**. If NA teams can be gathered into one group while the group averages stay within 1 point of the most even split, and that group ends up at least half NA players, it plays on **London**.
 
+The `groups:` block in `config.yaml` is commented out for now. That is fine for groups, but uncommenting it also makes `build_teams` keep NA players on as few teams as one group can hold, which makes a London group far more likely. Uncomment it in seasons with NA players.
+
 ## Configuration
 
 | File | Holds |
@@ -174,7 +177,7 @@ The main settings in `config.yaml`:
 | `optimizer.time_limit_s`, `optimizer.target_range` | 180, 0.1 | When team building stops |
 | `groups.na_server`, `groups.na_server_min_share`, `groups.na_balance_tolerance` | London, 0.5, 1.0 | The London group rule; `na_server: null` keeps the servers as listed |
 
-`config.example.yaml` documents every key. The `optimizer:`, `output:` and `groups:` blocks are commented out there because the defaults apply; uncomment a key to change it. Leaving `groups:` commented also means `build_teams` does not try to keep NA players on few teams. Unknown or removed keys print a warning.
+`config.example.yaml` documents every key. The `optimizer:`, `output:` and `groups:` blocks are commented out there because the defaults apply; uncomment a key to change it. Unknown or removed keys print a warning.
 
 ### VCC stats
 
@@ -187,6 +190,7 @@ The main settings in `config.yaml`:
 | --- | --- |
 | `teamMaker/data/players.json` | Every player with ratings, stack and VCC history |
 | `teamMaker/data/players_missing.json` | Players with missing ratings or VCC history, and why |
+| `teamMaker/data/backups/` | The previous `players.json` from each `generate_players` run (newest 10), in case hand edits were overwritten |
 | `teamMaker/output/teams.json`, `teams.png` | The teams, subs and excluded players (with reasons), the seed and settings used |
 | `teamMaker/output/groups.json`, `groups.png` | The groups, their servers and average strength |
 | `teamMaker/output/player_scores.json` | Each player's score breakdown |
@@ -204,4 +208,4 @@ The main settings in `config.yaml`:
 python -m pytest
 ```
 
-The tests use made-up data and never contact vlrcommunitycup.com.
+The tests use made-up data and never contact vlrcommunitycup.com. GitHub runs them, plus the Pyright type check, on every push (`.github/workflows/checks.yml`); a red cross next to a commit means something broke.

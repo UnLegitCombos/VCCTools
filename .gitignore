@@ -164,6 +164,7 @@ teamMaker/output/
 # Sensitive configuration files
 teamMaker/config/config.yaml
 teamMaker/data/players.json
+teamMaker/data/backups/
 stats/config.json
 stats/credentials.json
 

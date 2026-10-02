@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+import shutil
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -39,6 +40,8 @@ EXCLUDED_STATUSES = ("denied", "investigate")
 TRACKER_SCORE_RANGE = (0, 1000)
 # Plausible ping range in ms for the optional ping column.
 PING_RANGE = (1, 400)
+# players.json backups kept in data/backups/ (generate_players overwrites it).
+BACKUPS_KEPT = 10
 # "S25A6", "E8A1", "V26A4"; spaces and colons are ignored ("E26: A5").
 ACT_RE = re.compile(r"^([ESV])(\d+)A(\d+)$")
 
@@ -639,6 +642,37 @@ def print_summary(result, missing=None, new_only=False):
     print(f"Warnings: {len(result.warnings)}")
 
 
+def backup_file(path, keep=BACKUPS_KEPT):
+    """Copy ``path`` into a ``backups`` folder next to it before it is replaced.
+
+    Backups are named ``<stem>_<YYYYmmdd-HHMMSS>.json``; only the newest
+    ``keep`` are kept.
+
+    Args:
+        path: File about to be overwritten.
+        keep: Number of backups to keep.
+
+    Returns:
+        Path of the backup, or None when ``path`` does not exist.
+    """
+    if not os.path.exists(path):
+        return None
+    folder = os.path.join(os.path.dirname(path), "backups")
+    os.makedirs(folder, exist_ok=True)
+    stem, ext = os.path.splitext(os.path.basename(path))
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    target = os.path.join(folder, f"{stem}_{stamp}{ext}")
+    n = 1
+    while os.path.exists(target):  # several runs within one second
+        target = os.path.join(folder, f"{stem}_{stamp}-{n}{ext}")
+        n += 1
+    shutil.copy2(path, target)
+    old = sorted(glob.glob(os.path.join(folder, f"{stem}_*{ext}")), key=os.path.getmtime)
+    for extra in old[:-keep] if keep else []:
+        os.remove(extra)
+    return target
+
+
 def main(argv=None):
     setup_console()
     parser = argparse.ArgumentParser(description="Generate players.json from the signup CSV")
@@ -691,6 +725,9 @@ def main(argv=None):
     missing = build_missing(result)
 
     if not args.dry_run:
+        backup = backup_file(output_path)
+        if backup:
+            print(f"\nPrevious players.json saved as {backup}")
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump({**existing, **result.entries}, f, indent=2, ensure_ascii=False)
         if missing:

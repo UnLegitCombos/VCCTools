@@ -3,7 +3,8 @@
 import os
 
 WIDTH = 78
-BAR_WIDTH = 30
+BAR_WIDTH = 20  # characters per side of the team totals chart
+BAR_STEPS = (0.1, 0.2, 0.5, 1.0, 2.0, 5.0)  # points per character, smallest that fits
 
 
 def _rule(char="="):
@@ -14,11 +15,29 @@ def _section(title):
     return ["", _rule(), title, _rule()]
 
 
-def _bar(value, low, high):
-    """Return a bar whose length scales between ``low`` and ``high``."""
-    span = max(high - low, 1e-9)
-    length = 1 + int(round((value - low) / span * (BAR_WIDTH - 1)))
-    return "#" * length
+def bar_step(diffs):
+    """Points per bar character: the smallest step that fits every difference."""
+    biggest = max((abs(d) for d in diffs), default=0.0)
+    for step in BAR_STEPS:
+        if biggest / step <= BAR_WIDTH:
+            return step
+    return BAR_STEPS[-1]
+
+
+def diff_bar(diff, step):
+    """Bar for a difference from the average, left of '|' below it, right above.
+
+    Each character is ``step`` points; a bar longer than BAR_WIDTH ends in
+    '<' or '>' to show it was cut.
+    """
+    n = int(round(abs(diff) / step))
+    cut = n > BAR_WIDTH
+    n = min(n, BAR_WIDTH)
+    if diff < 0:
+        left = ("<" + "#" * (n - 1)) if cut else "#" * n
+        return f"{left:>{BAR_WIDTH}}|"
+    right = ("#" * (n - 1) + ">") if cut else "#" * n
+    return f"{'':>{BAR_WIDTH}}|{right}"
 
 
 def _team_tags(team):
@@ -118,15 +137,16 @@ def format_report(doc, info=None, paths=None, warnings=None):
             )
     if teams:
         lines.append("")
-        lines.append("Team totals")
-        lo = min(t["team_score"] for t in teams)
-        hi = max(t["team_score"] for t in teams)
-        for team in teams:
+        mean = sum(t["team_score"] for t in teams) / len(teams)
+        diffs = [t["team_score"] - mean for t in teams]
+        step = bar_step(diffs)
+        lines.append(f"Team totals vs the average {mean:.1f}  (# = {step:g} point)")
+        for team, diff in zip(teams, diffs):
             lines.append(
-                f"  {team['name']:<8} {team['team_score']:>6.1f} "
-                f"{_bar(team['team_score'], lo - (hi - lo) * 0.1, hi)}"
+                f"  {team['name']:<8} {team['team_score']:>6.1f} {diff:>+5.1f}  "
+                f"{diff_bar(diff, step)}".rstrip()
             )
-        lines.append("  (* = returning player; bars start slightly below the lowest total)")
+        lines.append("  (* = returning player)")
 
     subs = doc.get("subs") or []
     lines += _section(f"SUBSTITUTES ({len(subs)})")

@@ -590,9 +590,7 @@ class OptimizationResult:
 def optimizer_weights(config):
     """Return the objective weights from a config (role weight 0 if disabled)."""
     opt = config.get("optimizer") or {}
-    roles_on = config.get("mode", "advanced") == "advanced" and config.get(
-        "use_role_balancing", True
-    )
+    roles_on = config.get("use_role_balancing", True)
     return {
         "range_weight": opt.get("range_weight", 1.0),
         "std_weight": opt.get("std_weight", 0.2),

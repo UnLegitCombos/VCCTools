@@ -91,7 +91,6 @@ GROUPS_DEFAULTS = {
 
 DEFAULTS = {
     "players_file": "players.json",
-    "mode": "advanced",
     "current_season": 26,
     "current_act": 5,
     "acts_per_season": 6,
@@ -103,8 +102,6 @@ DEFAULTS = {
     "use_peak_act": True,
     "peak_act_decay_rate": 0.9,
     "use_role_balancing": True,
-    "use_region_debuff": False,
-    "non_eu_debuff": 0.9,
     "use_new_player_debuff": True,
     "new_player_debuff": 0.95,
     "use_returning_player_stats": True,
@@ -157,6 +154,9 @@ DEPRECATED_KEYS = {
     "peak_act_max_episode": "removed: every peak now fades with age (peak_act_decay_rate)",
     "peak_act_max_act": "removed: every peak now fades with age (peak_act_decay_rate)",
     "weight_peak_act": "removed: the peak-act bonus became a fade toward the current rank",
+    "mode": "removed: every scoring step is always available (switch each one off on its own)",
+    "use_region_debuff": "removed: superseded by the ping penalty (use_ping_adjustment)",
+    "non_eu_debuff": "removed: superseded by the ping penalty (use_ping_adjustment)",
 }
 
 # Legacy optimizer keys: old key -> (new dotted key, factor) or None if ignored.

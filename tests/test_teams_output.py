@@ -102,3 +102,13 @@ def test_report_is_ascii_and_lists_sections():
     # here uses ASCII), so the report itself must be ASCII.
     doc_ascii = json.loads(json.dumps(doc).replace("\\u00e4", "a").replace("\\u00e9", "e"))
     assert report.format_report(doc_ascii).isascii()
+
+
+def test_team_totals_bars_use_a_stated_scale():
+    from teamMaker.core import report
+
+    assert report.bar_step([0.9, -0.7]) == 0.1
+    assert report.bar_step([19.1, -4.7]) == 1.0
+    assert report.diff_bar(-0.9, 0.1) == " " * 11 + "#" * 9 + "|"
+    assert report.diff_bar(0.4, 0.1) == " " * 20 + "|####"
+    assert report.diff_bar(-30, 1.0) == "<" + "#" * 19 + "|"  # cut at 20
