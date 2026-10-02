@@ -78,7 +78,8 @@ OUTPUT_DEFAULTS = {
 # Defaults for the optional ``groups:`` block (consumed by make_groups).
 GROUPS_DEFAULTS = {
     "count": 3,
-    "servers": ["Frankfurt", "Frankfurt", "Frankfurt"],
+    "server": "Frankfurt",
+    "servers": None,  # optional per-group list; None = every group on ``server``
     "na_server": "London",
     "na_server_min_share": 0.5,
     "na_balance_tolerance": 1.0,

@@ -178,7 +178,8 @@ The main settings in `config.yaml`:
 | `ping_breakpoints` | 70 ms → 0% ... 200 ms → 20% | Ping penalty curve |
 | `random_seed` | 15 | The VCC season number; `null` draws a new seed each run |
 | `optimizer.time_limit_s`, `optimizer.target_range` | 180, 0.1 | When team building stops |
-| `groups.na_server`, `groups.na_server_min_share`, `groups.na_balance_tolerance` | London, 0.5, 1.0 | The London group rule; `na_server: null` keeps the servers as listed |
+| `groups.count`, `groups.server` | 3, Frankfurt | Number of groups and the server they play on; change `count` alone (`servers` is an optional per-group list) |
+| `groups.na_server`, `groups.na_server_min_share`, `groups.na_balance_tolerance` | London, 0.5, 1.0 | The London group rule; `na_server: null` keeps the servers as given |
 
 `config.example.yaml` documents every key. The `optimizer:`, `output:` and `groups:` blocks are commented out there because the defaults apply; uncomment a key to change it. Unknown or removed keys print a warning.
 

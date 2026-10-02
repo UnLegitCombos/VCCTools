@@ -139,14 +139,17 @@ random_seed: 15                    # = VCC season number (S15); bump it each sea
 #   team_order: shuffled           # shuffled (seeded) or by_score
 
 # --- Groups (used by make_groups; enables the cluster term above) ---
-# Every group plays on Frankfurt. If NA teams can be gathered into one group
-# without the group strengths drifting more than na_balance_tolerance points
-# apart (beyond the most even split), and that group ends up at least
-# na_server_min_share NA players, it plays on na_server (London) instead.
-# Set na_server: null to use the servers exactly as listed.
+# Every group plays on `server` (Frankfurt). If NA teams can be gathered into
+# one group without the group strengths drifting more than
+# na_balance_tolerance points apart (beyond the most even split), and that
+# group ends up at least na_server_min_share NA players, it plays on na_server
+# (London) instead. Servers are not decided in advance: change `count` alone.
+# `servers` is an optional per-group list (one entry per group) that replaces
+# `server`; with na_server: null the servers are used exactly as given.
 # groups:
 #   count: 3
-#   servers: [Frankfurt, Frankfurt, Frankfurt]
+#   server: Frankfurt
+#   servers: null                  # e.g. [London, Frankfurt, Frankfurt]
 #   na_server: London
 #   na_server_min_share: 0.5       # half or more of the group's players are NA
 #   na_balance_tolerance: 1.0      # extra spread of group means allowed for it

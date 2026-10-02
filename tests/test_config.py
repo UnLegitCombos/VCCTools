@@ -145,7 +145,8 @@ def test_groups_block_gets_defaults_only_when_configured(tmp_path):
     path = _write(tmp_path / "g.yaml", "groups:\n  count: 2\n")
     cfg = load_team_config(path)
     assert cfg["groups"]["count"] == 2
-    assert cfg["groups"]["servers"]
+    assert cfg["groups"]["server"] == "Frankfurt"
+    assert cfg["groups"]["servers"] is None
 
 
 def test_resolve_seed_uses_configured_seed():

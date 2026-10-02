@@ -735,8 +735,8 @@ def auto_cluster_cap(config, total_teams, fixed_cluster_teams=0):
         # NA teams can only gather in one group (the one that may move server).
         capacity = max(sizes)
     else:
-        servers = groups.get("servers") or []
-        home = servers[0] if servers else "London"
+        servers = groups.get("servers") or [groups.get("server") or "Frankfurt"] * len(sizes)
+        home = servers[0]
         capacity = sum(s for s, srv in zip(sizes, servers) if srv == home)
     return max(0, capacity - fixed_cluster_teams)
 

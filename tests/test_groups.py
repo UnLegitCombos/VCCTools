@@ -42,7 +42,7 @@ def make_teams_doc(n_teams, na_counts=None, seed=0, spread=1.0, generated_at="t0
 # Fixed servers (na_server off): the layout most tests below were written for.
 FIXED = {"na_server": None, "servers": ["London", "Frankfurt", "Frankfurt"]}
 # The default: every group on Frankfurt, a mostly-NA group may move to London.
-DYNAMIC = {"na_server": "London", "servers": ["Frankfurt", "Frankfurt", "Frankfurt"]}
+DYNAMIC = {"na_server": "London", "servers": None}
 
 
 def make_settings(**overrides):
@@ -243,8 +243,15 @@ def test_seed_reproducible():
 
 
 def test_defaults_are_frankfurt_with_london_switch():
-    assert GROUPS_DEFAULTS["servers"] == ["Frankfurt", "Frankfurt", "Frankfurt"]
+    assert GROUPS_DEFAULTS["server"] == "Frankfurt"
+    assert GROUPS_DEFAULTS["servers"] is None
     assert GROUPS_DEFAULTS["na_server"] == "London"
+
+
+def test_count_alone_sets_the_servers(tmp_path):
+    out, _ = run_groups(tmp_path, make_teams_doc(12), count=2, **DYNAMIC)
+    assert [g["server"] for g in out["groups"]] == ["Frankfurt", "Frankfurt"]
+    assert [len(g["team_ids"]) for g in out["groups"]] == [6, 6]
 
 
 def test_all_eu_stays_on_frankfurt(tmp_path):

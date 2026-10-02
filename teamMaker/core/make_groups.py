@@ -1,7 +1,7 @@
 """Split the teams of ``output/teams.json`` into groups (pools).
 
-Every group plays on its default server (``groups.servers``, Frankfurt by
-default). When ``groups.na_server`` is set (London by default), auto mode runs
+Every group plays on ``groups.server`` (Frankfurt by default), or on its entry
+of the optional per-group ``groups.servers`` list. When ``groups.na_server`` is set (London by default), auto mode runs
 twice:
 
 1. balance only: the most even split of team strength;
@@ -91,9 +91,11 @@ class GroupSettings:
         cluster = (config.get("optimizer") or {}).get("cluster_regions") or ["NA"]
         try:
             pinned = {int(k): int(v) for k, v in (block.get("pinned") or {}).items()}
+            count = int(block["count"])
+            servers = block.get("servers") or [block.get("server") or "Frankfurt"] * count
             settings = cls(
-                count=int(block["count"]),
-                servers=[str(s) for s in block["servers"]],
+                count=count,
+                servers=[str(s) for s in servers],
                 sizes=block["sizes"],
                 region_server_cost=block.get("region_server_cost") or {},
                 balance_weight=float(block["balance_weight"]),

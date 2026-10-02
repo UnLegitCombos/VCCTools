@@ -312,11 +312,14 @@ def test_auto_cluster_cap_with_na_server_is_one_group():
     config = _config()
     config["groups"] = {
         "count": 3,
-        "servers": ["Frankfurt", "Frankfurt", "Frankfurt"],
+        "server": "Frankfurt",
+        "servers": None,
         "sizes": "auto",
         "na_server": "London",
     }
     assert opt.auto_cluster_cap(config, 20) == 7  # sizes 7, 7, 6
+    config["groups"]["count"] = 2
+    assert opt.auto_cluster_cap(config, 20) == 10  # sizes 10, 10
 
 
 def test_no_time_limit_runs_full_budget_and_is_reproducible():
