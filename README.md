@@ -99,7 +99,7 @@ Settings live in `teamMaker/config/config.yaml`. Without that file `config.examp
 | Command | Does | Options |
 | --- | --- | --- |
 | `generate_players` | Sign-up CSV → `players.json` (with VCC history) | `--dry-run` checks the CSV only; `--keep-existing` only adds new sign-ups |
-| `build_teams` | `players.json` → `teams.json`, `teams.png` | `--tighter` for closer team totals; `--no-time-limit` to search until it settles (tens of minutes, same seed = same teams); `--solver annealing|ortools|both`, `--provers all|one|none`, `--ortools-time SECONDS`, `--ortools-workers N` (OR-Tools: `pip install -r requirements-ortools.txt`) |
+| `build_teams` | `players.json` → `teams.json`, `teams.png` | `--tighter` for closer team totals; `--no-time-limit` to search until it settles (tens of minutes, same seed = same teams); `--solver annealing\|ortools\|both`, `--provers all\|one\|none`, `--ortools-time SECONDS`, `--ortools-workers N` (OR-Tools: `pip install -r requirements-ortools.txt`) |
 | `make_groups` | `teams.json` → `groups.json`, `groups.png` | |
 | `scrape_distributions` | Archives a VCC season's ratings | `--dry-run`, `--refresh` |
 | `scoring` | Writes the player scores only | |
