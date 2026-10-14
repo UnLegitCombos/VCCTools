@@ -42,6 +42,14 @@ recent_data_ranked_weight: 0.65
 recent_data_previous_weight: 0.35
 older_data_ranked_weight: 0.75
 older_data_previous_weight: 0.25
+# vcc_mode: blend mixes VCC history into the score (the *_ranked_weight / *_previous_weight pairs above).
+# ranked_baseline keeps the Ranked score (rank + peak + tracker) and lets VCC history only move it up or
+# down by how far it beats or misses what that Ranked score predicts (uses the *_previous_weight keys
+# and the three below). Fit the numbers with: python -m teamMaker.core.scoring --calibrate
+vcc_mode: blend
+vcc_center: 27.3
+vcc_points_per_sd: 6.7
+vcc_max_adjustment: 3.0
 latest_season_available: auto  # auto = newest season in archive/season_distributions.json
 
 # --- Ping adjustment ---

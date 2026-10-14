@@ -4,6 +4,7 @@ Tools for running the Valorant Community Cup (VCC). The **Team Maker** turns the
 
 ## Contents
 
+- [The app](#the-app-optional)
 - [Step by step](#step-by-step)
 - [Commands](#commands)
 - [The sign-up CSV](#the-sign-up-csv)
@@ -13,6 +14,16 @@ Tools for running the Valorant Community Cup (VCC). The **Team Maker** turns the
 - [Output files](#output-files)
 - [Troubleshooting](#troubleshooting)
 - [Tests](#tests)
+
+## The app (optional)
+
+A small browser front panel for the steps below: upload the CSV, build players and teams, edit ratings, swap players, make groups and change the season settings. It runs the same commands and uses the same scoring, so the results are identical to the command line.
+
+```bash
+pip install -r requirements-app.txt
+```
+
+Then double-click `start_app.bat` (or run `python -m streamlit run app.py`). Ratings and teams are backed up before the app changes them, and every build it makes is kept in `teamMaker/output/history/`.
 
 ## Step by step
 
@@ -102,7 +113,7 @@ Settings live in `teamMaker/config/config.yaml`. Without that file `config.examp
 | `build_teams` | `players.json` → `teams.json`, `teams.png` | `--tighter` for closer team totals; `--no-time-limit` to search until it settles (tens of minutes, same seed = same teams); `--solver annealing\|ortools\|both`, `--provers all\|one\|none`, `--ortools-time SECONDS`, `--ortools-workers N` (OR-Tools: `pip install -r requirements-ortools.txt`) |
 | `make_groups` | `teams.json` → `groups.json`, `groups.png` | |
 | `scrape_distributions` | Archives a VCC season's ratings | `--dry-run`, `--refresh` |
-| `scoring` | Writes the player scores only | |
+| `scoring` | Writes the player scores only | `--calibrate` prints the `vcc_center` / `vcc_points_per_sd` fitted on the returning players (writes nothing) |
 
 Run each as `python -m teamMaker.core.<command>`. `players.json` can also be written by hand; see `teamMaker/data/playersexample.json`.
 
@@ -138,13 +149,14 @@ Typed in by hand, because tracker.gg blocks automated lookups. Rank names ignore
 | `tracker_peak` | `950` | Tracker Score of the peak act. Blank uses `tracker_current`. |
 | `ping` | `45` | Optional, in ms. Blank uses an estimate for the player's server. |
 
-Missing ratings are listed in `teamMaker/data/players_missing.json`; typos and odd values are printed as warnings.
+A missing `tracker_current` skips the tracker part of the score (about 6 points lower) and is flagged. Missing ratings are listed in `teamMaker/data/players_missing.json`; typos and odd values are printed as warnings.
 
 ## How players are scored
 
 1. **Rank**: 70% current rank + 30% peak rank. An older peak counts less: a peak above the current rank slides 10% of the way back toward it for every act since `peak_rank_act`.
 2. **Tracker**: the Tracker Scores add a smaller part on top.
 3. **VCC history** (returning players): blended in at 35% when they played the latest archived season, 25% when their last season is older. Each season's adjusted rating is compared against that whole season.
+   With `vcc_mode: ranked_baseline` the score is **Ranked + VCC** instead: Ranked (rank, peak and tracker together) stays as it is, and VCC history only moves it by how far it beats or misses the VCC level that Ranked score usually reaches (`expected_z = (ranked - vcc_center) / vcc_points_per_sd`; adjustment = weight × `vcc_points_per_sd` × (actual − expected), capped at `vcc_max_adjustment`). A player who does as well as their rank predicts is unchanged, however high the weight. Use `scoring --calibrate` at the start of a season; switching modes changes the whole published list, so do it before the teams are made.
 4. **New players** (no VCC history): × 0.95.
 5. **Ping**: high ping lowers the score, from nothing up to 70 ms to 20% at 200 ms.
 
@@ -174,6 +186,7 @@ The main settings in `config.yaml`:
 | `peak_act_decay_rate` | 0.9 | How much of an old peak's lead over the current rank is kept per act |
 | `current_season`, `current_act` | 26, 5 | The current Valorant act, used to age peaks |
 | `recent_data_previous_weight` | 0.35 | VCC history share for recent returning players (`older_data_previous_weight`: 0.25) |
+| `vcc_mode`, `vcc_center`, `vcc_points_per_sd`, `vcc_max_adjustment` | blend, 27.3, 6.7, 3.0 | `blend` mixes VCC history into the score (above); `ranked_baseline` uses the other three, see [how players are scored](#how-players-are-scored) |
 | `new_player_debuff` | 0.95 | Multiplier for players without VCC history |
 | `ping_breakpoints` | 70 ms → 0% ... 200 ms → 20% | Ping penalty curve |
 | `random_seed` | 15 | The VCC season number; `null` draws a new seed each run |

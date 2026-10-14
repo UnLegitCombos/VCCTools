@@ -21,6 +21,7 @@ __all__ = [
     "calculate_ping_adjustment",
     "apply_top_tier_compression",
     "score_players",
+    "calibrate",
     "normalize_season",
     "REGION_ALIASES",
 ]
@@ -606,7 +607,7 @@ def compute_player_score_detailed(player_info, config):
                 "tracker_total": cur_score + peak_score,
             }
         else:
-            breakdown["tracker_components"] = {"enabled": False}
+            breakdown["tracker_components"] = {"enabled": False, "tracker_missing": True}
     else:
         breakdown["tracker_components"] = {"enabled": False}
 
@@ -636,7 +637,27 @@ def compute_player_score_detailed(player_info, config):
                 previous_weight = config.get("older_data_previous_weight", DEFAULTS["older_data_previous_weight"])
                 reason = f"Older data (S{most_recent_season}) - reduced historical weight ({previous_weight:.0%} historical)"
 
-            current_score = current_score * ranked_weight + prev_score * previous_weight
+            mode = config.get("vcc_mode", DEFAULTS["vcc_mode"])
+            extra = {}
+            if mode == "ranked_baseline":
+                # Ranked (rank + peak + tracker) is the baseline; VCC history only moves it by how
+                # far it beats or misses the VCC level that Ranked score usually reaches.
+                center = config.get("vcc_center", DEFAULTS["vcc_center"])
+                per_sd = config.get("vcc_points_per_sd", DEFAULTS["vcc_points_per_sd"])
+                cap = config.get("vcc_max_adjustment", DEFAULTS["vcc_max_adjustment"])
+                actual_z = (prev_score - 18.0) / 8.0
+                expected_z = (pre_blend - center) / per_sd
+                adjustment = max(-cap, min(cap, previous_weight * per_sd * (actual_z - expected_z)))
+                current_score = pre_blend + adjustment
+                extra = {
+                    "mode": mode,
+                    "expected_z": expected_z,
+                    "actual_z": actual_z,
+                    "vcc_adjustment": adjustment,
+                }
+                ranked_weight = 1.0
+            else:
+                current_score = current_score * ranked_weight + prev_score * previous_weight
             adv["previous_season"] = {
                 "enabled": True,
                 "previous_season_score": prev_score,
@@ -646,6 +667,7 @@ def compute_player_score_detailed(player_info, config):
                 "most_recent_season": most_recent_season,
                 "ranked_weight": ranked_weight,
                 "previous_weight": previous_weight,
+                **extra,
             }
         else:
             adv["previous_season"] = {"enabled": True, "previous_season_score": 0.0}
@@ -807,8 +829,51 @@ def _print_summary(minimal_scores, top=10):
         print(f" ... and {len(items)-top} more")
 
 
-def main():
+def calibrate(players, config):
+    """Fit vcc_center / vcc_points_per_sd on the returning players.
+
+    Regresses each player's VCC z-score on their Ranked score (rank + peak + tracker, before any
+    VCC blending); expected_z = (ranked - center) / points_per_sd is that line.
+
+    Returns:
+        Dict with center, points_per_sd, r and n, or None with fewer than 5 usable players
+        or no usable slope.
+    """
+    _, breakdowns = score_players(players, config)
+    xs, zs = [], []
+    for bd in breakdowns.values():
+        ps = bd["advanced_components"].get("previous_season", {})
+        if ps.get("previous_season_score"):
+            xs.append(ps["pre_blend_score"])
+            zs.append((ps["previous_season_score"] - 18.0) / 8.0)
+    if len(xs) < 5:
+        return None
+    mx, mz = sum(xs) / len(xs), sum(zs) / len(zs)
+    sxx = sum((x - mx) ** 2 for x in xs)
+    szz = sum((z - mz) ** 2 for z in zs)
+    sxz = sum((x - mx) * (z - mz) for x, z in zip(xs, zs))
+    if sxx <= 0 or szz <= 0 or sxz <= 0:
+        return None
+    slope = sxz / sxx
+    return {
+        "center": round(mx - mz / slope, 1),
+        "points_per_sd": round(1.0 / slope, 1),
+        "r": round(sxz / math.sqrt(sxx * szz), 2),
+        "n": len(xs),
+    }
+
+
+def main(argv=None):
     """Main entry point for score calculation."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Write the player scores.")
+    parser.add_argument(
+        "--calibrate",
+        action="store_true",
+        help="print vcc_center / vcc_points_per_sd fitted on the returning players (writes nothing)",
+    )
+    args = parser.parse_args(argv)
     start = time.time()
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     try:
@@ -826,6 +891,15 @@ def main():
         players_data = _load_players(players_path)
     except Exception as e:
         print("Failed to load players:", e)
+        return
+    if args.calibrate:
+        fit = calibrate(players_data, config)
+        if fit is None:
+            print("Not enough returning players with VCC history to calibrate.")
+        else:
+            print(f"Fitted on {fit['n']} returning players (r = {fit['r']}):")
+            print(f"vcc_center: {fit['center']}")
+            print(f"vcc_points_per_sd: {fit['points_per_sd']}")
         return
     out_dir = os.path.join(base_dir, "output")
     os.makedirs(out_dir, exist_ok=True)

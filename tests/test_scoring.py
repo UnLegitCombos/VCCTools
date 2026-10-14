@@ -329,3 +329,95 @@ def test_rank_lookup_ignores_case_and_spaces():
     assert rank_to_numeric_with_rr("immortal 3", values, 150, cfg) == 28.5
     with pytest.warns(UserWarning):
         assert scoring.rank_to_numeric("Plat 2", values) == 0
+
+
+# --- vcc_mode -------------------------------------------------------------
+
+
+def _returning(adjusted_rating, **kw):
+    return make_player(
+        is_returning_player=True,
+        previous_season_stats=[{"season": "S13", "adjusted_rating": adjusted_rating}],
+        **kw,
+    )
+
+
+def _vcc_cfg(**kw):
+    return make_config(use_ping_adjustment=False, use_tracker=False, **kw)
+
+
+def test_default_vcc_mode_is_the_old_blend():
+    cfg = _vcc_cfg()
+    assert cfg["vcc_mode"] == "blend"
+    d = compute_player_score_detailed(_returning(1.0), cfg)
+    prev = d["advanced_components"]["previous_season"]
+    assert "vcc_adjustment" not in prev
+    assert prev["post_blend_score"] == pytest.approx(
+        prev["pre_blend_score"] * 0.65 + prev["previous_season_score"] * 0.35
+    )
+
+
+def test_ranked_baseline_no_change_when_vcc_matches_rank():
+    cfg = _vcc_cfg(vcc_mode="ranked_baseline")
+    base = compute_player_score_detailed(_returning(1.0), _vcc_cfg(use_returning_player_stats=False, use_new_player_debuff=False))
+    ranked = base["final_score"]
+    # Put the player exactly at their expected VCC level.
+    expected_z = (ranked - cfg["vcc_center"]) / cfg["vcc_points_per_sd"]
+    target_score = 18.0 + 8.0 * expected_z
+    # Find the adjusted rating whose season score is target_score (FAKE_DIST is linear).
+    mean = sum(FAKE_DIST) / len(FAKE_DIST)
+    std = (sum((x - mean) ** 2 for x in FAKE_DIST) / len(FAKE_DIST)) ** 0.5
+    rating = mean + std * (target_score - 18.0) / 8.0
+    d = compute_player_score_detailed(_returning(rating), cfg)
+    assert d["advanced_components"]["previous_season"]["vcc_adjustment"] == pytest.approx(0.0, abs=1e-6)
+    assert d["final_score"] == pytest.approx(ranked)
+
+
+def test_ranked_baseline_adjustment_follows_vcc_and_is_capped():
+    cfg = _vcc_cfg(vcc_mode="ranked_baseline")
+    low_rank = dict(current_rank="Gold 1", peak_rank="Gold 1")
+    high_rank = dict(current_rank="Immortal 2", peak_rank="Immortal 2")
+    good = compute_player_score_detailed(_returning(1.3, **low_rank), cfg)["advanced_components"]["previous_season"]
+    bad = compute_player_score_detailed(_returning(0.55, **high_rank), cfg)["advanced_components"]["previous_season"]
+    assert good["vcc_adjustment"] > 0 > bad["vcc_adjustment"]
+    assert abs(good["vcc_adjustment"]) <= cfg["vcc_max_adjustment"]
+    tight = _vcc_cfg(vcc_mode="ranked_baseline", vcc_max_adjustment=0.1)
+    capped = compute_player_score_detailed(_returning(1.3, **low_rank), tight)["advanced_components"]["previous_season"]
+    assert capped["vcc_adjustment"] == pytest.approx(0.1)
+
+
+def test_ranked_baseline_higher_weight_only_amplifies_the_gap():
+    low = _vcc_cfg(vcc_mode="ranked_baseline", recent_data_previous_weight=0.1, older_data_previous_weight=0.1)
+    high = _vcc_cfg(vcc_mode="ranked_baseline", recent_data_previous_weight=0.5, older_data_previous_weight=0.5)
+    p = _returning(1.3)
+    a = compute_player_score_detailed(p, low)["advanced_components"]["previous_season"]["vcc_adjustment"]
+    b = compute_player_score_detailed(p, high)["advanced_components"]["previous_season"]["vcc_adjustment"]
+    assert 0 < a < b
+
+
+def test_missing_tracker_is_flagged():
+    cfg = make_config(use_ping_adjustment=False)
+    d = compute_player_score_detailed(make_player(), cfg)
+    assert d["tracker_components"] == {"enabled": False, "tracker_missing": True}
+    d = compute_player_score_detailed(make_player(tracker_current=800, tracker_peak=900), cfg)
+    assert d["tracker_components"]["enabled"] is True
+
+
+def test_calibrate_recovers_a_known_line():
+    cfg = _vcc_cfg()
+    players = {}
+    ranks = ["Gold 1", "Gold 3", "Platinum 2", "Diamond 1", "Diamond 3", "Ascendant 2", "Immortal 1", "Immortal 2"]
+    mean = sum(FAKE_DIST) / len(FAKE_DIST)
+    std = (sum((x - mean) ** 2 for x in FAKE_DIST) / len(FAKE_DIST)) ** 0.5
+    for i, rank in enumerate(ranks):
+        ranked = compute_player_score_detailed(
+            make_player(current_rank=rank, peak_rank=rank), _vcc_cfg(use_returning_player_stats=False, use_new_player_debuff=False)
+        )["final_score"]
+        z = (ranked - 25.0) / 10.0  # exact line: center 25, 10 points per sd
+        players[f"p{i}"] = _returning(mean + std * z, current_rank=rank, peak_rank=rank)
+    fit = scoring.calibrate(players, cfg)
+    assert fit is not None
+    assert fit["center"] == pytest.approx(25.0, abs=0.2)
+    assert fit["points_per_sd"] == pytest.approx(10.0, abs=0.2)
+    assert fit["r"] == pytest.approx(1.0, abs=0.01)
+    assert scoring.calibrate({"a": players["p0"]}, cfg) is None

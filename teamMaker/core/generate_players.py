@@ -258,7 +258,7 @@ def apply_csv_ratings(result, name, row, rank_values):
             )
         entry[col] = value
     if entry["tracker_current"] is None:
-        result.issue(name, "tracker", "no tracker score (tracker part of the score skipped)")
+        result.issue(name, "tracker", "no tracker score (tracker part of the score skipped, about 6 points lower)")
     elif entry["tracker_peak"] is None:
         result.issue(name, "tracker", "no peak tracker score (using the current one)")
         entry["tracker_peak"] = entry["tracker_current"]
