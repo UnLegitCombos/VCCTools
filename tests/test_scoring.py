@@ -329,3 +329,30 @@ def test_rank_lookup_ignores_case_and_spaces():
     assert rank_to_numeric_with_rr("immortal 3", values, 150, cfg) == 28.5
     with pytest.warns(UserWarning):
         assert scoring.rank_to_numeric("Plat 2", values) == 0
+
+
+# --- VCC history blend and missing tracker ---------------------------------
+
+
+def _returning(adjusted_rating, **kw):
+    return make_player(
+        is_returning_player=True,
+        previous_season_stats=[{"season": "S13", "adjusted_rating": adjusted_rating}],
+        **kw,
+    )
+
+
+def test_vcc_history_is_blended_into_the_score():
+    cfg = make_config(use_ping_adjustment=False, use_tracker=False)
+    prev = compute_player_score_detailed(_returning(1.0), cfg)["advanced_components"]["previous_season"]
+    assert prev["post_blend_score"] == pytest.approx(
+        prev["pre_blend_score"] * 0.65 + prev["previous_season_score"] * 0.35
+    )
+
+
+def test_missing_tracker_is_flagged():
+    cfg = make_config(use_ping_adjustment=False)
+    d = compute_player_score_detailed(make_player(), cfg)
+    assert d["tracker_components"] == {"enabled": False, "tracker_missing": True}
+    d = compute_player_score_detailed(make_player(tracker_current=800, tracker_peak=900), cfg)
+    assert d["tracker_components"]["enabled"] is True

@@ -8,12 +8,13 @@ the raw ratings and falls back to the (truncated) HTML table if the payload
 format ever changes.
 """
 
+import http.client
 import json
 import math
 import re
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
@@ -89,7 +90,7 @@ def fetch_html(url, user_agent, timeout=20):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return resp.read().decode("utf-8", errors="replace")
-    except Exception as e:
+    except (OSError, ValueError, http.client.HTTPException) as e:
         print(f"  [vcc] fetch error for {url}: {e}")
         return None
 
@@ -285,7 +286,7 @@ def _self_check(computed, table_rows, code):
 
 def _build_stats(html, code, url, stage, decimals):
     """Build SeasonStats from page HTML (payload first, HTML table fallback)."""
-    fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    fetched_at = datetime.now(UTC).isoformat(timespec="seconds")
     payload = extract_flight_payload(html)
     rows = extract_stats_rows(payload) if payload else []
     table_rows = parse_html_table(html)

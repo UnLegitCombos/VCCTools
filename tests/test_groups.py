@@ -203,7 +203,7 @@ def test_balance_term_reduces_range():
     for k in range(20):
         problem = mg.GroupProblem(scores, costs, sizes, settings, {}, random.Random(k))
         randoms.append(range_of(problem.assign))
-    assign, energy = mg.optimize_groups(scores, costs, sizes, settings, {}, seed=1)
+    assign, _energy = mg.optimize_groups(scores, costs, sizes, settings, {}, seed=1)
     assert range_of(assign) < min(randoms)
     assert range_of(assign) < 0.2
 
@@ -268,7 +268,7 @@ def test_few_na_players_stay_on_frankfurt(tmp_path):
 
 def test_enough_na_teams_get_a_london_group(tmp_path):
     na = {1: 5, 5: 5, 9: 5, 13: 4}  # 19 NA players: enough for a 30-player group
-    out, text = run_groups(tmp_path, make_teams_doc(18, na_counts=na, spread=1.0), **DYNAMIC)
+    out, _text = run_groups(tmp_path, make_teams_doc(18, na_counts=na, spread=1.0), **DYNAMIC)
     servers = [g["server"] for g in out["groups"]]
     assert servers.count("London") == 1
     london = out["groups"][servers.index("London")]

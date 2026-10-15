@@ -164,7 +164,7 @@ def build_units(players, scores, config=None):
                     uid=len(result.units),
                     names=names,
                     size=size,
-                    tenths=sum(int(round(scores[n] * 10)) for n in names),
+                    tenths=sum(round(scores[n] * 10) for n in names),
                     sig_ids=sig_ids,
                     cluster_n=sum(
                         1
@@ -202,10 +202,10 @@ def packing_patterns(n1, n2, n3, teams):
     solutions = []
     if n1 + 2 * n2 + 3 * n3 != TEAM_SIZE * teams:
         return solutions
-    for a in range(0, min(n3, n2) + 1):
+    for a in range(min(n3, n2) + 1):
         b = n3 - a
         left2 = n2 - a
-        for c in range(0, left2 // 2 + 1):
+        for c in range(left2 // 2 + 1):
             d = left2 - 2 * c
             e = teams - a - b - c - d
             if e < 0:
@@ -299,8 +299,8 @@ def select_units(units):
     target = total % TEAM_SIZE
     while target <= total:
         best = None
-        for c3 in range(0, min(counts[3], target // 3) + 1):
-            for c2 in range(0, min(counts[2], (target - 3 * c3) // 2) + 1):
+        for c3 in range(min(counts[3], target // 3) + 1):
+            for c2 in range(min(counts[2], (target - 3 * c3) // 2) + 1):
                 c1 = target - 3 * c3 - 2 * c2
                 if c1 > counts[1]:
                     continue
@@ -381,8 +381,8 @@ class TeamProblem:
         self.w_role = float(weights["role_weight"])
         self.w_cluster = float(weights["cluster_weight"])
         self.cluster_cap = cluster_cap
-        self.target_range10 = int(round(target_range * 10))
-        self.target_role2 = int(round(target_role * 2))
+        self.target_range10 = round(target_range * 10)
+        self.target_role2 = round(target_role * 2)
         self.teams = [list(t) for t in teams]
         self.k = len(self.teams)
         self._rebuild()
@@ -825,8 +825,9 @@ def validate_solution(players, teams, fixed, subs, excluded):
         placed = [team_of.get(n) for n in members if n in team_of]
         if len(members) == 4 and placed:
             problems.append(f"4-stack {gid} is playing")
-        if 2 <= len(members) <= 3:
-            if len(placed) not in (0, len(members)) or len(set(placed)) > 1:
-                problems.append(f"stack {gid} is split")
+        if 2 <= len(members) <= 3 and (
+            len(placed) not in (0, len(members)) or len(set(placed)) > 1
+        ):
+            problems.append(f"stack {gid} is split")
     if problems:
         raise ValueError("invalid solution: " + "; ".join(problems))

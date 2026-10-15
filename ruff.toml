@@ -1,0 +1,11 @@
+# The rules the code was cleaned against; CI runs `ruff check .`.
+[lint]
+select = ["E4", "E7", "E9", "F", "I", "B", "UP", "SIM", "BLE", "TRY004", "N999", "C4", "PIE"]
+ignore = [
+    "B905",   # zip(strict=) is not worth the noise here
+    "B028",   # warnings.warn stacklevel
+    "SIM105", # try/except/pass reads fine
+    "SIM108", # if/else blocks are clearer than ternaries in places
+    "SIM910", # .get(key, None) is explicit
+    "UP015",  # open(path, "r") is explicit
+]

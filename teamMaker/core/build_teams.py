@@ -13,10 +13,14 @@ import argparse
 import os
 import sys
 
-from teamMaker.core import cpsat
+from teamMaker.core import cpsat, report, teams_output
 from teamMaker.core import optimizer as opt
-from teamMaker.core import report, teams_output
-from teamMaker.core.config import BASE_DIR, TIGHTER_PROFILE, load_team_config, resolve_seed
+from teamMaker.core.config import (
+    BASE_DIR,
+    TIGHTER_PROFILE,
+    load_team_config,
+    resolve_seed,
+)
 from teamMaker.core.scoring import _export_scores, _load_players
 from teamMaker.core.utils.console import setup_console
 
@@ -47,7 +51,7 @@ def _render_png(doc, path, config):
     title = (config.get("groups") or {}).get("title", "VCC Teams")
     try:
         render_teams_sheet(doc, path, title)
-    except Exception as exc:  # rendering must never lose the teams
+    except Exception as exc:  # noqa: BLE001 - rendering must never lose the teams
         print(f"Warning: could not render {os.path.basename(path)}: {exc}")
         return None
     return path

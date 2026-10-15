@@ -37,7 +37,12 @@ import time
 from dataclasses import dataclass, field, replace
 
 from teamMaker.core import anneal
-from teamMaker.core.config import BASE_DIR, GROUPS_DEFAULTS, load_team_config, resolve_seed
+from teamMaker.core.config import (
+    BASE_DIR,
+    GROUPS_DEFAULTS,
+    load_team_config,
+    resolve_seed,
+)
 from teamMaker.core.teams_output import load_teams_json
 from teamMaker.core.utils.console import setup_console
 
@@ -806,8 +811,8 @@ def _render_png(doc, teams_doc, path, title):
     except ImportError:
         return None
     try:
-        render_groups_sheet(doc, teams_doc, path, title, per_row=6)
-    except Exception as exc:  # rendering must never lose groups.json
+        render_groups_sheet(doc, teams_doc, path, title, per_row=4)
+    except Exception as exc:  # noqa: BLE001 - rendering must never lose groups.json
         print(f"Warning: could not render {os.path.basename(path)}: {exc}")
         return None
     return path
@@ -817,7 +822,7 @@ def main():
     """Command line entry point."""
     setup_console()
     try:
-        doc, text = run()
+        _doc, text = run()
     except (GroupsError, ValueError, FileNotFoundError) as exc:
         print(f"Error: {exc}")
         sys.exit(1)

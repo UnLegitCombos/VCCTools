@@ -25,7 +25,7 @@ def _run(seed=5, team_order="shuffled"):
 
 
 def test_document_structure():
-    players, scores, build, dropped, result, doc = _run()
+    players, _scores, _build, _dropped, _result, doc = _run()
     assert doc["schema_version"] == 1
     assert set(doc) == {"schema_version", "meta", "summary", "teams", "subs", "excluded"}
     teams = doc["teams"]
@@ -93,7 +93,7 @@ def test_load_rejects_unknown_schema(tmp_path):
 
 
 def test_report_is_ascii_and_lists_sections():
-    players, scores, build, dropped, result, doc = _run()
+    players, _scores, _build, _dropped, _result, doc = _run()
     text = report.format_report(doc, {"players": len(players), "elapsed_s": 1.0}, {"teams": "x.json"}, ["a warning"])
     for heading in ("INPUT AND SELECTION", "OPTIMIZATION", "BALANCE", "TEAMS", "SUBSTITUTES", "WARNINGS", "OUTPUT FILES"):
         assert heading in text

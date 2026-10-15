@@ -463,7 +463,8 @@ def test_backup_file_keeps_the_newest(tmp_path):
         made.append(gp.backup_file(str(target), keep=2))
     kept = sorted(p.name for p in (tmp_path / "backups").iterdir())
     assert len(kept) == 2
-    assert json.loads(open(made[-1], encoding="utf-8").read()) == {"run": 3}
+    with open(made[-1], encoding="utf-8") as f:
+        assert json.load(f) == {"run": 3}
 
 
 def test_main_backs_up_players_json(tmp_path, monkeypatch):

@@ -95,7 +95,7 @@ def _team_entry(team_id, fixed, groups, players, scores):
             entries.append(entry)
             regions[info.get("region")] = regions.get(info.get("region"), 0) + 1
     entries.sort(key=lambda e: (-e["score"], e["name"]))
-    total10 = sum(int(round(e["score"] * 10)) for e in entries)
+    total10 = sum(round(e["score"] * 10) for e in entries)
     formation = "+".join(
         str(s) for s in sorted((len(g[0]) for g in groups), reverse=True)
     )
@@ -147,7 +147,7 @@ def build_teams_doc(
         teams.append(_team_entry(len(teams) + 1, True, groups, players, scores))
 
     def tenths(team):
-        return sum(int(round(p["score"] * 10)) for p in team["players"])
+        return sum(round(p["score"] * 10) for p in team["players"])
 
     opt_teams = teams[:optimized_count]
     cluster_regions = [str(r).upper() for r in (config.get("optimizer") or {}).get("cluster_regions") or []]

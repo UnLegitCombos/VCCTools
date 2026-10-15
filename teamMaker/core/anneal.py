@@ -140,10 +140,13 @@ def anneal(
             else:
                 reject()
         temp *= cooling
-        if time_limit_s is not None and done % check_every == 0:
-            if time.time() - started >= time_limit_s:
-                stopped_by = STOP_TIME
-                break
+        if (
+            time_limit_s is not None
+            and done % check_every == 0
+            and time.time() - started >= time_limit_s
+        ):
+            stopped_by = STOP_TIME
+            break
 
     return AnnealResult(
         best_energy=best,

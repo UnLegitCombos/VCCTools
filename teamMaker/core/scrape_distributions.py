@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Build teamMaker/archive/season_distributions.json from the VCC stats pages.
 
 Seasons already in the archive are frozen (never re-scraped) unless

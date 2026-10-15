@@ -1,29 +1,33 @@
 """Player scoring: one number per player from rank, peak, tracker scores,
 VCC history and ping. See compute_player_score_detailed for the steps."""
 
+import json
 import math
 import os
-import json
-import time
 import re
+import time
 import warnings
 
 from teamMaker.core.config import DEFAULTS, load_team_config
 
 __all__ = [
+    "REGION_ALIASES",
+    "apply_top_tier_compression",
+    "calculate_peak_act_weight",
+    "calculate_ping_adjustment",
+    "calculate_previous_season_score",
     "compute_player_score",
     "compute_player_score_detailed",
-    "calculate_previous_season_score",
+    "normalize_season",
     "parse_peak_act",
-    "calculate_peak_act_weight",
     "rank_to_numeric",
     "rank_to_numeric_with_rr",
-    "calculate_ping_adjustment",
-    "apply_top_tier_compression",
     "score_players",
-    "normalize_season",
-    "REGION_ALIASES",
 ]
+
+# A VCC season rating becomes a score centred on 18 with 8 points per standard deviation.
+VCC_SCORE_BASE = 18.0
+VCC_SCORE_PER_SD = 8.0
 
 # Season distributions loaded from archive/season_distributions.json.
 _SEASON_DISTRIBUTIONS_CACHE = None
@@ -253,7 +257,7 @@ def _get_season_distributions(config):
                 if isinstance(v, list)
             }
             return _SEASON_DISTRIBUTIONS_CACHE
-        except Exception as e:
+        except (OSError, ValueError, TypeError) as e:
             print("Could not load archive/season_distributions.json:", e)
 
     _SEASON_DISTRIBUTIONS_CACHE = {}
@@ -403,11 +407,8 @@ def calculate_previous_season_score(player_info, config):
         z_score = (rating - mean) / std_dev
 
         # Map z-score to score range (1-35 points)
-        # Center around 18, with ~8 point spread per std dev
-        base_score = 18.0
-        score_per_std = 8.0
-
-        score = base_score + (z_score * score_per_std)
+        # Centre and spread: see VCC_SCORE_BASE and VCC_SCORE_PER_SD
+        score = VCC_SCORE_BASE + (z_score * VCC_SCORE_PER_SD)
 
         # Clamp to reasonable range
         return max(1.0, min(35.0, score))
@@ -606,7 +607,7 @@ def compute_player_score_detailed(player_info, config):
                 "tracker_total": cur_score + peak_score,
             }
         else:
-            breakdown["tracker_components"] = {"enabled": False}
+            breakdown["tracker_components"] = {"enabled": False, "tracker_missing": True}
     else:
         breakdown["tracker_components"] = {"enabled": False}
 
@@ -731,7 +732,7 @@ def apply_top_tier_compression(player_scores_dict, config):
     ordered = sorted(player_scores_dict.values())
     # Linear-interpolated percentile of the scores.
     pos = (len(ordered) - 1) * min(100.0, max(0.0, percentile)) / 100.0
-    lo = int(math.floor(pos))
+    lo = math.floor(pos)
     hi = min(lo + 1, len(ordered) - 1)
     knee = ordered[lo] + (ordered[hi] - ordered[lo]) * (pos - lo)
 
@@ -824,14 +825,14 @@ def main():
     print("Loading players from:", players_path)
     try:
         players_data = _load_players(players_path)
-    except Exception as e:
+    except (OSError, ValueError) as e:
         print("Failed to load players:", e)
         return
     out_dir = os.path.join(base_dir, "output")
     os.makedirs(out_dir, exist_ok=True)
     out_detailed = os.path.join(out_dir, "player_scores.json")
     out_minimal = os.path.join(out_dir, "player_scores_minimal.json")
-    detailed, minimal = _export_scores(players_data, config, out_detailed, out_minimal)
+    _detailed, minimal = _export_scores(players_data, config, out_detailed, out_minimal)
     _print_summary(minimal)
     print(f"\nExported {len(minimal)} player scores.")
     print("Detailed ->", out_detailed)

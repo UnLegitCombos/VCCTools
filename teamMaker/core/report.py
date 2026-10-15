@@ -30,7 +30,7 @@ def diff_bar(diff, step):
     Each character is ``step`` points; a bar longer than BAR_WIDTH ends in
     '<' or '>' to show it was cut.
     """
-    n = int(round(abs(diff) / step))
+    n = round(abs(diff) / step)
     cut = n > BAR_WIDTH
     n = min(n, BAR_WIDTH)
     if diff < 0:
@@ -133,7 +133,7 @@ def format_report(doc, info=None, paths=None, warnings=None):
             fixed = "*" if p["is_returning"] else " "
             lines.append(
                 f"    {p['name'][:22]:<22}{fixed}{p['score']:>5.1f}  "
-                f"{p['assigned_role']:<10} {str(p['region']):<5}{stack}"
+                f"{p['assigned_role']:<10} {p['region']!s:<5}{stack}"
             )
     if teams:
         lines.append("")
@@ -154,7 +154,7 @@ def format_report(doc, info=None, paths=None, warnings=None):
         flag = "*" if s["is_returning"] else " "
         role = "/".join(s["role"]) if s["role"] else "?"
         lines.append(
-            f"  {s['name'][:22]:<22}{flag}{s['score']:>5.1f}  {str(s['region']):<5} "
+            f"  {s['name'][:22]:<22}{flag}{s['score']:>5.1f}  {s['region']!s:<5} "
             f"{role[:24]:<24} {s['reason']}"
         )
 

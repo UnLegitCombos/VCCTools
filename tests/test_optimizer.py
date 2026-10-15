@@ -45,7 +45,7 @@ def test_packing_feasible_and_infeasible_cases():
 
 
 def test_random_packing_is_feasible_and_seeded():
-    players, scores, config, build, kept, _ = _prepare()
+    _players, _scores, _config, _build, kept, _ = _prepare()
     teams = sum(u.size for u in kept) // 5
     a = opt.random_packing(kept, teams, random.Random(3))
     b = opt.random_packing(kept, teams, random.Random(3))
@@ -111,7 +111,7 @@ def test_substitute_takes_whole_stack_out():
 
 
 def test_select_units_multiple_of_five_and_packable():
-    players, scores, config, build, kept, dropped = _prepare()
+    _players, _scores, _config, build, kept, dropped = _prepare()
     total = sum(u.size for u in build.units)
     assert sum(u.size for u in kept) % 5 == 0
     assert (sum(u.size for u in dropped) - total) % 5 == 0
@@ -123,12 +123,12 @@ def test_select_units_drops_latest_non_returning_first():
     for i, info in enumerate(players.values()):
         info["is_returning_player"] = i not in (2, 5)
     build = opt.build_units(players, scores, _config())
-    kept, dropped = opt.select_units(build.units)
+    _kept, dropped = opt.select_units(build.units)
     assert [u.names[0] for u in dropped] == ["P002", "P005"]
     for info in players.values():
         info["is_returning_player"] = False
     build = opt.build_units(players, scores, _config())
-    kept, dropped = opt.select_units(build.units)
+    _kept, dropped = opt.select_units(build.units)
     assert {u.names[0] for u in dropped} == {"P005", "P006"}
 
 
@@ -144,7 +144,7 @@ def test_select_units_grows_removal_when_remainder_unpackable():
 
 
 def _full_result(seed=7, **optimizer):
-    players, scores, config, build, kept, dropped = _prepare(
+    players, _scores, config, build, kept, dropped = _prepare(
         iterations=6000, restarts=2, **optimizer
     )
     result = opt.optimize_teams(kept, config, seed)
@@ -152,7 +152,7 @@ def _full_result(seed=7, **optimizer):
 
 
 def test_solution_invariants():
-    players, config, build, kept, dropped, result = _full_result()
+    players, _config, build, _kept, dropped, result = _full_result()
     subs = [n for n, _ in build.pool_subs] + [n for u in dropped for n in u.names]
     excluded = [n for names, _ in build.excluded for n in names]
     opt.validate_solution(players, result.teams, build.fixed, subs, excluded)
@@ -169,7 +169,7 @@ def test_solution_invariants():
 
 
 def test_validate_solution_detects_problems():
-    players, config, build, kept, dropped, result = _full_result()
+    players, _config, build, _kept, dropped, result = _full_result()
     subs = [n for n, _ in build.pool_subs] + [n for u in dropped for n in u.names]
     bad_teams = [list(t) for t in result.teams]
     bad_teams[0] = bad_teams[0][:-1]
@@ -187,7 +187,7 @@ def _solo(name, uid):
 
 
 def test_split_stack_is_detected():
-    players, scores = make_players([2] + [1] * 8)
+    players, _scores = make_players([2] + [1] * 8)
     names = list(players)
     team_a = [_solo(n, i) for i, n in enumerate([names[0]] + names[2:6])]
     team_b = [_solo(n, 10 + i) for i, n in enumerate([names[1]] + names[6:10])]
@@ -205,7 +205,7 @@ def test_seed_reproducibility():
 
 
 def test_incremental_energy_matches_full_after_10k_moves():
-    players, scores, config, build, kept, _ = _prepare(cluster_max_teams=3)
+    _players, _scores, config, _build, kept, _ = _prepare(cluster_max_teams=3)
     teams = sum(u.size for u in kept) // 5
     rng = random.Random(5)
     weights = opt.optimizer_weights(config)
@@ -233,7 +233,7 @@ def test_incremental_energy_matches_full_after_10k_moves():
 
 
 def test_moves_change_team_compositions():
-    players, scores, config, build, kept, _ = _prepare()
+    _players, _scores, config, _build, kept, _ = _prepare()
     teams = sum(u.size for u in kept) // 5
     rng = random.Random(9)
     problem = opt.TeamProblem(
@@ -249,7 +249,7 @@ def test_moves_change_team_compositions():
 
 
 def test_best_energy_equals_recomputed():
-    players, scores, config, build, kept, _ = _prepare()
+    _players, _scores, config, _build, kept, _ = _prepare()
     teams = sum(u.size for u in kept) // 5
     rng = random.Random(2)
     weights = opt.optimizer_weights(config)
@@ -271,7 +271,7 @@ def test_best_energy_equals_recomputed():
 
 
 def test_annealing_improves_on_random_start():
-    players, scores, config, build, kept, _ = _prepare(iterations=20000, restarts=1)
+    _players, _scores, config, _build, kept, _ = _prepare(iterations=20000, restarts=1)
     teams = sum(u.size for u in kept) // 5
     start = opt.TeamProblem(
         kept,
@@ -283,7 +283,7 @@ def test_annealing_improves_on_random_start():
 
 
 def test_target_early_stop():
-    players, scores, config, build, kept, _ = _prepare(
+    _players, _scores, config, _build, kept, _ = _prepare(
         iterations=200000, restarts=3, target_range=50.0, target_role_penalty=100.0
     )
     result = opt.optimize_teams(kept, config, 1)
@@ -320,7 +320,7 @@ def test_fixed_teams_are_not_optimized():
     players, scores = make_players([5, 3, 2, 1, 1, 1, 1, 1], subs=0)
     config = _config(iterations=2000, restarts=1)
     build = opt.build_units(players, scores, config)
-    kept, dropped = opt.select_units(build.units)
+    kept, _dropped = opt.select_units(build.units)
     result = opt.optimize_teams(kept, config, 1)
     assert len(result.teams) == 2
     fixed_names = {n for f in build.fixed for n in f.names}

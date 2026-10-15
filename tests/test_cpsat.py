@@ -66,7 +66,7 @@ def test_missing_ortools_gives_a_clear_error(monkeypatch):
 
 
 def test_cluster_cap_is_respected():
-    players, config, kept = _prepare()
+    _players, config, kept = _prepare()
     na = [u for u in kept if u.cluster_n]
     assert na, "synthetic data should contain NA players"
     result = cpsat.solve_teams(kept, config, 5, cluster_cap=len(na), time_limit_s=4, workers=2)

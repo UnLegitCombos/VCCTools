@@ -224,7 +224,8 @@ def load_yaml(path):
     if data is None:
         return {}
     if not isinstance(data, dict):
-        raise ValueError(f"Config file must be a mapping: {path}")
+        # ValueError, not TypeError: callers catch it for every bad config file.
+        raise ValueError(f"Config file must be a mapping: {path}")  # noqa: TRY004
     return data
 
 

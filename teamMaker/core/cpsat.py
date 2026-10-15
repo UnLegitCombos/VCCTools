@@ -19,10 +19,16 @@ because it is not linear; the returned teams are always scored with
 - ``none``: only workers that search for better teams (no proof at all).
 """
 
+import itertools
 import time
 
 from teamMaker.core import roles as role_mod
-from teamMaker.core.optimizer import TEAM_SIZE, OptimizationResult, TeamProblem, optimizer_weights
+from teamMaker.core.optimizer import (
+    TEAM_SIZE,
+    OptimizationResult,
+    TeamProblem,
+    optimizer_weights,
+)
 
 PROVERS = ("all", "one", "none")
 # Objective scale: energy * 100 as integers (weights may be fractional).
@@ -102,7 +108,7 @@ def solve_teams(
         s = m.new_int_var(0, total10, f"sum{t}")
         m.add(s == sum(units[u].tenths * x[u, t] for u in idx))
         sums.append(s)
-    for a, b in zip(sums, sums[1:]):  # teams are interchangeable: order them
+    for a, b in itertools.pairwise(sums):  # teams are interchangeable: order them
         m.add(a <= b)
     range10 = m.new_int_var(0, total10, "range10")
     m.add(range10 == sums[-1] - sums[0])

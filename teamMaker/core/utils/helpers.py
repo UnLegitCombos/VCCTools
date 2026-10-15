@@ -1,5 +1,6 @@
 import re
 
+
 # Extracts the slug name from vlrcommunitycup.com/player/{uuid}/{name}
 def parse_vcc_player_name(url):
     if not url:
