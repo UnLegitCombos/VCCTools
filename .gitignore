@@ -176,3 +176,10 @@ teamMaker/data/input/
 teamMaker/data/players_missing.json
 stats/matchListBackup.json
 
+
+# Local files
+teamMaker/data/app_change_history.jsonl
+teamMaker/data/*.rar
+
+# Archives sent around for review
+*.rar

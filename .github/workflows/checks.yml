@@ -21,3 +21,7 @@ jobs:
         run: python -m pytest -q
       - name: Type check
         run: pyright teamMaker tests
+      - name: Lint
+        run: ruff check .
+      - name: Unused code
+        run: vulture app.py launcher.py teamMaker tests vulture_whitelist.py

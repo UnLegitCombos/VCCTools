@@ -4,6 +4,7 @@ Tools for running the Valorant Community Cup (VCC). The **Team Maker** turns the
 
 ## Contents
 
+- [The app](#the-app-optional)
 - [Step by step](#step-by-step)
 - [Commands](#commands)
 - [The sign-up CSV](#the-sign-up-csv)
@@ -13,6 +14,23 @@ Tools for running the Valorant Community Cup (VCC). The **Team Maker** turns the
 - [Output files](#output-files)
 - [Troubleshooting](#troubleshooting)
 - [Tests](#tests)
+
+## The app (optional)
+
+A small front panel for the steps below. It runs the same commands and uses the same scoring, so the results are identical to the command line. Four pages:
+
+- **Players**: every player with score, rank, team and warnings, filtered by rank, region, status, team, returning/new or "only with a warning". Select a row to see why the player has their score and to edit them, with the new score shown before you save. **Add a player** adds a late sign-up (and loads a returning player's VCC history) without importing the CSV again.
+- **Rating list**: the list the rulebook uses for substitutes, highest first, with what changed since the last published list. **Publish this list** saves it as the new reference and writes `rating_list_<date>.png` and `.csv` to `teamMaker/output/rating_lists/`.
+- **Teams**: build teams, swap players, make groups, restore an earlier build.
+- **Season setup**: upload and import the sign-up CSV, the season settings, and archiving last season's VCC ratings.
+
+```bash
+pip install -r requirements-app.txt
+```
+
+Then double-click `start_app.bat`. The app opens in its own window and stops when you close it (it needs the Edge WebView2 runtime that comes with Windows 11; without it, it opens in your browser). The server only listens on your own computer. To run it in a browser tab instead: `python -m streamlit run app.py`. Ratings and teams are backed up before the app changes them, and every build it makes is kept in `teamMaker/output/history/`.
+
+A player's tracker.gg link comes from the sign-up `tracker` column. A peak rank below the current rank, a badly written act, a ping outside 1-400 and unknown roles are refused. Making a substitute active gives them a group of their own; making a stack member a substitute takes the whole stack out, as the optimizer does. Every save, including an added player, is listed under **Recent edits** (`teamMaker/data/app_change_history.jsonl`) and the newest one can be undone.
 
 ## Step by step
 
@@ -138,7 +156,7 @@ Typed in by hand, because tracker.gg blocks automated lookups. Rank names ignore
 | `tracker_peak` | `950` | Tracker Score of the peak act. Blank uses `tracker_current`. |
 | `ping` | `45` | Optional, in ms. Blank uses an estimate for the player's server. |
 
-Missing ratings are listed in `teamMaker/data/players_missing.json`; typos and odd values are printed as warnings.
+A missing `tracker_current` skips the tracker part of the score (about 6 points lower) and is flagged. Missing ratings are listed in `teamMaker/data/players_missing.json`; typos and odd values are printed as warnings.
 
 ## How players are scored
 
@@ -212,4 +230,4 @@ The main settings in `config.yaml`:
 python -m pytest
 ```
 
-The tests use made-up data and never contact vlrcommunitycup.com. GitHub runs them, plus the Pyright type check, on every push (`.github/workflows/checks.yml`); a red cross next to a commit means something broke.
+The tests use made-up data and never contact vlrcommunitycup.com. GitHub runs them, plus the Pyright type check, ruff and vulture (`pip install -r requirements-dev.txt` to run them locally), on every push (`.github/workflows/checks.yml`); a red cross next to a commit means something broke.
