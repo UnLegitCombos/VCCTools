@@ -11,6 +11,8 @@ the ``render_*`` functions return ``False`` without it.
 
 import colorsys
 import os
+import tempfile
+import urllib.request
 from typing import Any, cast
 
 from teamMaker.core.config import BASE_DIR
@@ -24,6 +26,12 @@ except ImportError:  # pragma: no cover - depends on the environment
     _PIL_OK = False
 
 ROLE_DIR = os.path.join(BASE_DIR, "assets", "roles")
+# Rank icons from valorant-api.com's CDN (the current competitive tier set): tier 3 is Iron 1,
+# each rank adds 1, Radiant is 27. Images drawn into PNGs are downloaded once into RANK_CACHE.
+RANK_ICON_URL = ("https://media.valorant-api.com/competitivetiers/"
+                 "03621f52-342b-cf4e-4f86-9350a49c6d04/{tier}/smallicon.png")
+RANK_TIERS = ("iron", "bronze", "silver", "gold", "platinum", "diamond", "ascendant", "immortal")
+RANK_CACHE = os.path.join(tempfile.gettempdir(), "vcc_tools_rank_icons")
 
 SCALE = 2
 BORDER_W = 2
@@ -147,7 +155,7 @@ def load_font(size, bold=False):
 
 def text_width(draw, text, font):
     """Return the rendered width of text in physical pixels."""
-    return int(round(draw.textlength(text, font=font)))
+    return round(draw.textlength(text, font=font))
 
 
 def fit_text(draw, text, font, max_width):
@@ -210,6 +218,49 @@ def _role_icon(role, size_px, alpha):
             icon = None
     _ICON_CACHE[key] = icon
     return icon
+
+
+def rank_tier(rank):
+    """Valorant's competitive tier number for a rank ("Gold 2" -> 13, "Radiant" -> 27), or None."""
+    parts = str(rank or "").lower().split()
+    if parts == ["radiant"]:
+        return 27
+    if len(parts) == 2 and parts[0] in RANK_TIERS and parts[1] in ("1", "2", "3"):
+        return 3 + 3 * RANK_TIERS.index(parts[0]) + int(parts[1]) - 1
+    return None
+
+
+def rank_icon_url(rank):
+    """CDN link of a rank's icon, or None for an unknown rank."""
+    tier = rank_tier(rank)
+    return None if tier is None else RANK_ICON_URL.format(tier=tier)
+
+
+def rank_icon(rank, size_px):
+    """A rank icon scaled to size_px (downloaded once, then cached on disk), or None if unavailable."""
+    key = ("rank", rank_tier(rank), size_px)
+    if key not in _ICON_CACHE:
+        _ICON_CACHE[key] = _load_rank_icon(rank, size_px)
+    return _ICON_CACHE[key]
+
+
+def _load_rank_icon(rank, size_px):
+    tier = rank_tier(rank)
+    if tier is None or not _PIL_OK:
+        return None
+    path = os.path.join(RANK_CACHE, f"{tier}.png")
+    try:
+        if not os.path.isfile(path):
+            os.makedirs(RANK_CACHE, exist_ok=True)
+            request = urllib.request.Request(RANK_ICON_URL.format(tier=tier), headers={"User-Agent": "VCCTools"})
+            with urllib.request.urlopen(request, timeout=5) as response:
+                data = response.read()
+            with open(path + ".tmp", "wb") as f:
+                f.write(data)
+            os.replace(path + ".tmp", path)
+        return Image.open(path).convert("RGBA").resize((size_px, size_px), Image.Resampling.LANCZOS)
+    except (OSError, ValueError):  # offline or a bad download: the caller falls back to text
+        return None
 
 
 def _fonts():
