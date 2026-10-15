@@ -484,3 +484,20 @@ def test_main_backs_up_players_json(tmp_path, monkeypatch):
     backups = list((data / "backups").iterdir())
     assert len(backups) == 1
     assert json.loads(backups[0].read_text(encoding="utf-8")) == {"Hand": {"edited": True}}
+
+
+# --- tracker link ------------------------------------------------------
+
+
+def test_tracker_url_comes_from_the_csv_and_must_be_a_profile_link():
+    good = "https://tracker.gg/valorant/profile/riot/Name%23EUW/overview"
+    rows = [
+        make_row("s1", "Alpha", tracker=good),
+        make_row("s2", "Bravo", tracker="http://tracker.gg/valorant/profile/riot/x"),
+        make_row("s3", "Charlie", tracker="https://evil.example/valorant/profile/riot/x"),
+        make_row("s4", "Delta", tracker="https://tracker.gg/other"),
+        make_row("s5", "Echo"),
+    ]
+    e = gp.build_player_entries(rows, CONFIG).entries
+    assert e["Alpha"]["tracker_url"] == good
+    assert all(e[n]["tracker_url"] is None for n in ("Bravo", "Charlie", "Delta", "Echo"))

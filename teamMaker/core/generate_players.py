@@ -16,6 +16,7 @@ import shutil
 import time
 from collections import Counter
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -201,6 +202,26 @@ def parse_act(raw):
     return f"{prefix}{int(major)}A{int(act)}", True
 
 
+def valid_tracker_url(value):
+    """Return the tracker.gg Valorant profile link in ``value``, or None if it is not one."""
+    text = (value or "").strip()
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError:
+        return None
+    if (
+        parts.scheme != "https"
+        or parts.hostname not in ("tracker.gg", "www.tracker.gg")
+        or parts.username
+        or parts.password
+        or port not in (None, 443)
+        or not parts.path.startswith("/valorant/profile/riot/")
+    ):
+        return None
+    return text
+
+
 def apply_csv_ratings(result, name, row, rank_values):
     """Fill the hand-entered rank, tracker and ping fields of one entry.
 
@@ -209,6 +230,7 @@ def apply_csv_ratings(result, name, row, rank_values):
     """
     entry = result.entries[name]
     rank_lookup = {r.lower(): r for r in rank_values}
+    entry["tracker_url"] = valid_tracker_url(row.get("tracker"))
 
     raw_current = row.get("current_rank") or row.get("rank") or ""
     current, problem = parse_rank(raw_current, rank_lookup)
@@ -258,7 +280,7 @@ def apply_csv_ratings(result, name, row, rank_values):
             )
         entry[col] = value
     if entry["tracker_current"] is None:
-        result.issue(name, "tracker", "no tracker score (tracker part of the score skipped)")
+        result.issue(name, "tracker", "no tracker score (tracker part of the score skipped, about 6 points lower)")
     elif entry["tracker_peak"] is None:
         result.issue(name, "tracker", "no peak tracker score (using the current one)")
         entry["tracker_peak"] = entry["tracker_current"]
